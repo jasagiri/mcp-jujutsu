@@ -1,0 +1,277 @@
+{
+  "protocol_version": "2025-03-26",
+  "name": "MCP-Jujutsu",
+  "description": "A Model Context Protocol (MCP) tool for semantic commit division using Jujutsu version control system",
+  "vendor": "Gods & Golem, Inc.",
+  "version": "0.1.0",
+  "contact_email": "",
+  "transport": {
+    "type": "https",
+    "endpoint": "http://localhost:8080/mcp"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "tools": [
+    {
+      "name": "analyzeCommitRange",
+      "description": "Analyzes a commit range to identify logical boundaries",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the Jujutsu repository"
+          },
+          "commitRange": {
+            "type": "string",
+            "description": "Commit range in Jujutsu format (e.g., 'HEAD~1..HEAD')"
+          }
+        },
+        "required": ["commitRange"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "analysis": {
+            "type": "object",
+            "description": "Analysis of the changes in the commit range"
+          }
+        }
+      }
+    },
+    {
+      "name": "proposeCommitDivision",
+      "description": "Proposes a semantic division of a commit range",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the Jujutsu repository"
+          },
+          "commitRange": {
+            "type": "string",
+            "description": "Commit range in Jujutsu format (e.g., 'HEAD~1..HEAD')"
+          }
+        },
+        "required": ["commitRange"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "proposal": {
+            "type": "object",
+            "description": "Proposed division of the commit range"
+          }
+        }
+      }
+    },
+    {
+      "name": "executeCommitDivision",
+      "description": "Executes a commit division based on a proposal",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the Jujutsu repository"
+          },
+          "proposal": {
+            "type": "object",
+            "description": "The commit division proposal to execute"
+          }
+        },
+        "required": ["proposal"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "object",
+            "description": "Result of the executed commit division"
+          }
+        }
+      }
+    },
+    {
+      "name": "automateCommitDivision",
+      "description": "Automates the entire commit division process",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the Jujutsu repository"
+          },
+          "commitRange": {
+            "type": "string",
+            "description": "Commit range in Jujutsu format (e.g., 'HEAD~1..HEAD')"
+          }
+        },
+        "required": ["commitRange"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "object",
+            "description": "Result of the automated commit division"
+          }
+        }
+      }
+    }
+  ],
+  "resources": [
+    {
+      "type": "repository",
+      "description": "A Jujutsu repository",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the repository"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the repository"
+          }
+        }
+      }
+    },
+    {
+      "type": "commit",
+      "description": "A commit in a Jujutsu repository",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Commit ID"
+          },
+          "message": {
+            "type": "string",
+            "description": "Commit message"
+          },
+          "author": {
+            "type": "string",
+            "description": "Author of the commit"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "Timestamp of the commit"
+          }
+        }
+      }
+    },
+    {
+      "type": "diff",
+      "description": "A diff between commits",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "commitRange": {
+            "type": "string",
+            "description": "Commit range of the diff"
+          },
+          "files": {
+            "type": "array",
+            "description": "Files changed in the diff",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the file"
+                },
+                "changeType": {
+                  "type": "string",
+                  "description": "Type of change (add, modify, delete)"
+                },
+                "diff": {
+                  "type": "string",
+                  "description": "Diff content"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "description": "Analyze a commit range",
+      "request": {
+        "method": "analyzeCommitRange",
+        "params": {
+          "repoPath": "/path/to/repo",
+          "commitRange": "HEAD~1..HEAD"
+        }
+      },
+      "response": {
+        "analysis": {
+          "files": 3,
+          "changeStats": {
+            "additions": 10,
+            "deletions": 5,
+            "totalLines": 15
+          },
+          "fileTypes": {
+            "nim": 2,
+            "md": 1
+          },
+          "changeTypes": {
+            "modify": 2,
+            "add": 1
+          }
+        }
+      }
+    },
+    {
+      "description": "Propose a commit division",
+      "request": {
+        "method": "proposeCommitDivision",
+        "params": {
+          "repoPath": "/path/to/repo",
+          "commitRange": "HEAD~1..HEAD"
+        }
+      },
+      "response": {
+        "proposal": {
+          "originalCommitRange": "HEAD~1..HEAD",
+          "proposedCommits": [
+            {
+              "message": "feat: add new feature",
+              "changes": [
+                {
+                  "path": "src/file1.nim",
+                  "changeType": "add"
+                }
+              ]
+            },
+            {
+              "message": "fix: resolve issue in file",
+              "changes": [
+                {
+                  "path": "src/file2.nim",
+                  "changeType": "modify"
+                }
+              ]
+            },
+            {
+              "message": "docs: update documentation",
+              "changes": [
+                {
+                  "path": "docs/readme.md",
+                  "changeType": "modify"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
