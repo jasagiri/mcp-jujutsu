@@ -73,7 +73,7 @@ proc configureTransportsSingle(server: single_server.SingleRepoServer, config: c
     let httpTransport = newHttpTransport(config.httpHost, config.httpPort)
     server.addTransport(httpTransport)
     echo "MCP-Jujutsu server listening on http://", config.httpHost, ":", config.httpPort
-  
+
   if config.useStdio:
     let stdioTransport = newStdioTransport()
     server.addTransport(stdioTransport)
@@ -85,7 +85,7 @@ proc configureTransportsMulti(server: multi_server.MultiRepoServer, config: core
     let httpTransport = newHttpTransport(config.httpHost, config.httpPort)
     server.addTransport(httpTransport)
     echo "MCP-Jujutsu server listening on http://", config.httpHost, ":", config.httpPort
-  
+
   if config.useStdio:
     let stdioTransport = newStdioTransport()
     server.addTransport(stdioTransport)
@@ -112,10 +112,10 @@ proc printUsage() =
 
 proc main() {.async.} =
   # Default options for argument parsing
-  var 
+  var
     showHelp = false
     showVersion = false
-  
+
   # Parse basic command line arguments first
   for kind, key, val in getopt():
     case kind
@@ -127,18 +127,19 @@ proc main() {.async.} =
         showVersion = true
     else:
       # Other command line argument types (cmdEnd, cmdArgument) - ignore
-  
+      discard
+
   if showHelp:
     printUsage()
     return
-  
+
   if showVersion:
     echo "MCP-Jujutsu v0.1.0"
     return
-  
+
   # Parse mode-specific arguments and create appropriate configuration
   var config: core_config.Config
-  
+
   # Check if mode is explicitly specified
   var isMulti = false
   for kind, key, val in getopt():
@@ -152,34 +153,35 @@ proc main() {.async.} =
         isMulti = true
     else:
       # Other command line argument types (cmdEnd, cmdArgument) - ignore
-  
+      discard
+
   if isMulti:
     # Multi-repository mode
     echo "Starting MCP-Jujutsu in multi-repository mode"
     config = multi_config.parseCommandLine()
-    
+
     # Create and initialize multi-repo server
     let server = await multi_server.newMcpServer(config)
-    
+
     # Configure transports
     configureTransportsMulti(server, config)
-    
+
     # Start server
     await server.start()
   else:
     # Single-repository mode (default)
     echo "Starting MCP-Jujutsu in single-repository mode"
     config = single_config.parseCommandLine()
-    
+
     # Create and initialize single-repo server
     let server = await single_server.newMcpServer(config)
-    
+
     # Configure transports
     configureTransportsSingle(server, config)
-    
+
     # Start server
     await server.start()
-  
+
   # Keep the server running
   runForever()
 
