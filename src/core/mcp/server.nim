@@ -3,7 +3,7 @@
 ## This module implements the base Model Context Protocol server functionality
 ## that is common to both single-repository and multi-repository modes.
 
-import std/[asyncdispatch, json, options, strutils, tables, times]
+import std/[asyncdispatch, json, options, strutils, tables]
 import ../config/config
 import ../logging/logger
 

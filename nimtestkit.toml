@@ -1,0 +1,72 @@
+# nim-testkit configuration for mcp-jujutsu
+
+[project]
+name = "mcp-jujutsu"
+description = "MCP server for semantic commit division with Jujutsu"
+
+[directories]
+source = "src"
+tests = "tests"
+build = "build"
+
+[patterns]
+include = ["test_*.nim", "*_test.nim"]
+exclude = ["*_integration.nim"]  # Skip integration tests by default
+test_name = "test_${module}.nim"
+
+[coverage]
+enabled = true
+threshold = 80.0
+formats = ["html", "json", "lcov"]
+output_dir = "coverage"
+include_patterns = ["src/**/*.nim"]
+exclude_patterns = ["tests/**/*.nim", "vendor/**/*.nim"]
+
+[tests]
+parallel = true
+color = true
+power_assert = true
+verbose = true
+timeout = 30  # seconds per test
+flags = ["--path:src", "-d:JJ_DISABLE_TEST"]
+
+[vcs]
+git = false  # This project uses Jujutsu
+jujutsu = true
+mercurial = false
+svn = false
+fossil = false
+
+[categories]
+# Define test categories for selective testing
+core = ["tests/core/**/*.nim"]
+single_repo = ["tests/single_repo/**/*.nim"]
+multi_repo = ["tests/multi_repo/**/*.nim"]
+client = ["tests/client/**/*.nim"]
+integration = ["tests/**/*_integration.nim"]
+
+[execution]
+# Custom execution profiles
+default = {
+  excludeCategories = ["integration"]
+}
+
+full = {
+  includeCategories = ["all"]
+}
+
+quick = {
+  includeCategories = ["core", "client"],
+  flags = ["--opt:speed"]
+}
+
+[templates]
+test = """
+import unittest
+import power_assert
+import "$MODULE"
+
+suite "$MODULE_NAME Tests":
+  test "example test":
+    assert true
+"""

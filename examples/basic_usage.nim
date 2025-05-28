@@ -4,7 +4,7 @@
 import asyncdispatch
 import json
 import strformat
-import ../src/client/client
+import mcp_jujutsu/client/client
 
 # Example 1: Basic commit analysis
 proc analyzeRecentCommits() {.async.} =
@@ -13,7 +13,7 @@ proc analyzeRecentCommits() {.async.} =
   let client = newMcpClient("http://localhost:8080/mcp")
   
   # Analyze the last 5 commits
-  let analysis = await client.analyzeCommitRange("HEAD~5..HEAD")
+  let analysis = await client.analyzeCommitRange("/path/to/repo", "HEAD~5..HEAD")
   
   echo fmt"Files changed: {analysis.fileCount}"
   echo fmt"Lines added: {analysis.totalAdditions}"
@@ -32,9 +32,11 @@ proc tryDifferentStrategies() {.async.} =
   
   for strategy in strategies:
     let proposal = await client.proposeCommitDivision(
-      commitRange = "HEAD~1..HEAD",
-      strategy = strategy,
-      maxCommits = 5
+      "/path/to/repo",
+      "HEAD~1..HEAD",
+      strategy,
+      "medium",  # commitSize
+      5          # maxCommits
     )
     
     echo fmt"\nStrategy: {strategy}"
@@ -50,11 +52,15 @@ proc automatedDivisionWorkflow() {.async.} =
   
   # First, do a dry run to see what would happen
   let dryRunResult = await client.automateCommitDivision(
-    commitRange = "HEAD~2..HEAD",
-    strategy = "semantic",
-    dryRun = true,
-    validate = true,
-    minConfidence = 0.8
+    "/path/to/repo",
+    "HEAD~2..HEAD",
+    "semantic",
+    "medium",
+    10,
+    0.8,
+    true,   # dryRun
+    true,   # validate
+    false   # autoFix
   )
   
   if dryRunResult.proposal.confidence >= 0.8:
@@ -65,11 +71,15 @@ proc automatedDivisionWorkflow() {.async.} =
     # If dry run looks good, execute for real
     echo "\nExecuting actual division..."
     let result = await client.automateCommitDivision(
-      commitRange = "HEAD~2..HEAD",
-      strategy = "semantic",
-      dryRun = false,
-      validate = true,
-      autoFix = true
+      "/path/to/repo",
+      "HEAD~2..HEAD",
+      "semantic",
+      "medium",
+      10,
+      0.7,
+      false,  # dryRun
+      true,   # validate
+      true    # autoFix
     )
     
     echo fmt"Created {result.commitIds.len} commits"
@@ -85,17 +95,18 @@ proc handleLargeCommit() {.async.} =
   let client = newMcpClient("http://localhost:8080/mcp")
   
   # First analyze to see the size
-  let analysis = await client.analyzeCommitRange("HEAD~1..HEAD")
+  let analysis = await client.analyzeCommitRange("/path/to/repo", "HEAD~1..HEAD")
   
   if analysis.fileCount > 20:
     echo fmt"Large commit detected: {analysis.fileCount} files"
     
     # For large commits, use "many" size preference
     let proposal = await client.proposeCommitDivision(
-      commitRange = "HEAD~1..HEAD",
-      strategy = "directory",  # Group by directory for large commits
-      commitSize = "many",     # Create many small commits
-      maxCommits = 20         # Allow up to 20 commits
+      "/path/to/repo",
+      "HEAD~1..HEAD",
+      "directory",  # Group by directory for large commits
+      "many",       # Create many small commits
+      20            # Allow up to 20 commits
     )
     
     echo fmt"Proposed {proposal.proposedCommits.len} commits:"
@@ -115,10 +126,15 @@ proc customConfidenceWorkflow() {.async.} =
   for threshold in thresholds:
     if not executed:
       let result = await client.automateCommitDivision(
-        commitRange = "HEAD~1..HEAD",
-        strategy = "semantic",
-        minConfidence = threshold,
-        dryRun = true
+        "/path/to/repo",
+        "HEAD~1..HEAD",
+        "semantic",
+        "medium",
+        10,
+        threshold,
+        true,   # dryRun
+        false,  # validate
+        false   # autoFix
       )
       
       if result.proposal.confidence >= threshold:
@@ -128,7 +144,8 @@ proc customConfidenceWorkflow() {.async.} =
         
         # Execute the division
         let execResult = await client.executeCommitDivision(
-          proposal = result.proposal
+          "/path/to/repo",
+          result.proposal
         )
         echo fmt"Successfully created {execResult.commitIds.len} commits"
 
@@ -140,14 +157,14 @@ proc robustCommitDivision() {.async.} =
   
   try:
     # Try to analyze an invalid range
-    let analysis = await client.analyzeCommitRange("INVALID..RANGE")
+    let analysis = await client.analyzeCommitRange("/path/to/repo", "INVALID..RANGE")
   except MpcError as e:
     echo fmt"MCP Error: {e.msg}"
     echo fmt"Error code: {e.code}"
     
     # Fall back to a valid range
     echo "Falling back to HEAD~1..HEAD"
-    let analysis = await client.analyzeCommitRange("HEAD~1..HEAD")
+    let analysis = await client.analyzeCommitRange("/path/to/repo", "HEAD~1..HEAD")
     echo fmt"Analysis successful: {analysis.fileCount} files"
   except Exception as e:
     echo fmt"Unexpected error: {e.msg}"
@@ -156,6 +173,8 @@ proc robustCommitDivision() {.async.} =
 when isMainModule:
   echo "MCP-Jujutsu Client Examples"
   echo "=========================="
+  echo "Note: Replace '/path/to/repo' with your actual repository path"
+  echo "Make sure the MCP server is running on http://localhost:8080"
   
   # Run all examples
   waitFor analyzeRecentCommits()

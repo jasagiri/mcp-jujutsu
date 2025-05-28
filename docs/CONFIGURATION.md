@@ -15,20 +15,61 @@ This guide covers all configuration options for MCP-Jujutsu, including server se
 
 ## Configuration Files
 
-MCP-Jujutsu uses several configuration files depending on the mode of operation:
+MCP-Jujutsu supports both TOML and JSON configuration formats. TOML is the default and recommended format.
 
-| File | Purpose | Required |
-|------|---------|----------|
-| `config.json` | Main server and analysis configuration | No (uses defaults) |
-| `repos.json` | Multi-repository definitions | Yes (for multi-repo mode) |
-| `.env` | Environment variables | No |
-| `logging.json` | Advanced logging configuration | No |
+| File | Purpose | Required | Formats |
+|------|---------|----------|---------|
+| `mcp-jujutsu.toml` / `config.json` | Main server and analysis configuration | No (uses defaults) | TOML (preferred), JSON |
+| `repos.toml` / `repos.json` | Multi-repository definitions | Yes (for multi-repo mode) | TOML (preferred), JSON |
+| `.env` | Environment variables | No | Environment |
+| `logging.toml` / `logging.json` | Advanced logging configuration | No | TOML, JSON |
+
+### Configuration Search Order
+
+Configuration files are searched in the following priority order:
+
+1. `mcp-jujutsu.toml` (current directory)
+2. `.mcp-jujutsu.toml` (current directory)  
+3. `config.toml` (current directory)
+4. `~/.config/mcp-jujutsu/config.toml`
+5. JSON equivalents of the above paths
+
+The first configuration file found will be used.
 
 ## Server Configuration
 
-The main configuration file (`config.json`) controls server behavior and analysis settings.
+The main configuration file controls server behavior and analysis settings. You can use either TOML or JSON format.
 
 ### Basic Structure
+
+**TOML Format (Recommended):**
+
+```toml
+[general]
+mode = "single"
+server_name = "MCP-Jujutsu"
+server_port = 8080
+log_level = "info"
+verbose = false
+
+[transport]
+http = true
+http_host = "127.0.0.1"
+http_port = 8080
+stdio = false
+
+[repository]
+path = "."
+repos_dir = "."
+config_path = "./repos.toml"
+
+[ai]
+endpoint = "https://api.openai.com/v1/chat/completions"
+api_key = ""
+model = "gpt-4"
+```
+
+**JSON Format (Legacy):**
 
 ```json
 {

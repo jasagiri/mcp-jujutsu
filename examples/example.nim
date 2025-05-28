@@ -1,9 +1,11 @@
-## Example usage of the Semantic Divide MCP client
+## Quick Start Example for MCP-Jujutsu
 ##
-## This file demonstrates how to use the MCP client to interact with the
-## Semantic Divide server for Jujutsu repositories.
+## This simple example demonstrates the core workflow:
+## 1. Analyze commits
+## 2. Propose semantic division
+## 3. Execute the division
 
-import std/[asyncdispatch, json, os, strformat]
+import std/[asyncdispatch, json, os, strformat, strutils]
 import ../src/client/client
 
 proc printJsonResult(title: string, json: JsonNode) =
@@ -12,52 +14,73 @@ proc printJsonResult(title: string, json: JsonNode) =
   echo json.pretty
 
 proc example() {.async.} =
-  # Create a new MCP client
+  # Setup
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Use the current directory as the repository path if not specified
-  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
-  echo fmt"Using repository: {repoPath}"
-  
-  # Commit range to analyze
-  let commitRange = "HEAD~1..HEAD"
-  echo fmt"Analyzing commit range: {commitRange}"
+  echo "MCP-Jujutsu Quick Start"
+  echo "======================"
+  echo fmt"Repository: {repoPath}"
+  echo fmt"Server: http://localhost:8080"
+  echo ""
   
   try:
-    # Step 1: Analyze the commit range
-    echo "\nStep 1: Analyzing commit range..."
-    let analysis = await client.analyzeCommitRange(repoPath, commitRange)
-    printJsonResult("Analysis Result", analysis)
+    # Step 1: Analyze commits
+    echo "[1/3] Analyzing commits..."
+    let analysis = await client.analyzeCommitRange(repoPath, "HEAD~1..HEAD")
     
-    # Step 2: Propose a commit division
-    echo "\nStep 2: Proposing commit division..."
-    let proposal = await client.proposeCommitDivision(repoPath, commitRange)
-    printJsonResult("Proposal Result", proposal)
+    # Extract key metrics from the JSON response
+    let fileCount = analysis["fileCount"].getInt
+    let additions = analysis["totalAdditions"].getInt
+    let deletions = analysis["totalDeletions"].getInt
     
-    # Step 3: Display the number of proposed commits
-    let numCommits = proposal["proposal"]["proposedCommits"].len
-    echo fmt"\nProposal suggests dividing into {numCommits} commits:"
-    for i, commit in proposal["proposal"]["proposedCommits"]:
-      let message = commit["message"].getStr
-      let numChanges = commit["changes"].len
-      echo fmt"  {i+1}. {message} ({numChanges} file changes)"
+    echo fmt"      {fileCount} files | +{additions} -{deletions} lines"
     
-    # Step 4: Ask user if they want to execute the division
-    echo "\nWould you like to execute this division? (y/n)"
-    let response = stdin.readLine().toLowerAscii()
+    # Step 2: Propose division
+    echo "\n[2/3] Creating semantic division proposal..."
+    let proposal = await client.proposeCommitDivision(repoPath, "HEAD~1..HEAD")
     
-    if response == "y" or response == "yes":
-      # Step 5: Execute the commit division
-      echo "\nStep 5: Executing commit division..."
-      let result = await client.executeCommitDivision(repoPath, proposal["proposal"])
-      printJsonResult("Execution Result", result)
+    # Extract proposal details
+    let proposedCommits = proposal["proposedCommits"]
+    let confidence = proposal["confidence"].getFloat
+    
+    echo fmt"      Confidence: {confidence * 100:.1f}%"
+    echo fmt"      Proposed {proposedCommits.len} commits:"
+    
+    for i in 0..<proposedCommits.len:
+      let commit = proposedCommits[i]
+      let msg = commit["message"].getStr
+      let files = commit["changes"].len
+      echo fmt"      {i+1}. {msg} ({files} files)"
+    
+    # Step 3: Execute if approved
+    if confidence >= 0.8:
+      echo "\n[3/3] High confidence! Execute division? (y/n): "
+      let answer = stdin.readLine().toLowerAscii()
       
-      echo "\nCommit division completed successfully!"
+      if answer == "y":
+        echo "      Executing..."
+        let result = await client.executeCommitDivision(repoPath, proposal)
+        
+        let commitIds = result["commitIds"]
+        echo fmt"      ✓ Created {commitIds.len} commits successfully!"
+        
+        for id in commitIds:
+          echo fmt"        - {id.getStr[0..7]}..."
+      else:
+        echo "      Cancelled."
     else:
-      echo "\nCommit division cancelled."
+      echo "\n[3/3] Confidence too low for automatic execution."
+      echo "      Consider adjusting the commit range or strategy."
   
   except McpError as e:
-    echo "Error: ", e.msg
+    echo fmt"\n✗ Error: {e.msg}"
+    echo "\nTroubleshooting:"
+    echo "  1. Is the MCP server running? (nimble run)"
+    echo "  2. Are you in a Jujutsu repository?"
+    echo "  3. Is the commit range valid?"
+  except Exception as e:
+    echo fmt"\n✗ Unexpected error: {e.msg}"
 
 when isMainModule:
   waitFor example()

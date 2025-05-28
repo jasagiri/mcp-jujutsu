@@ -34,6 +34,6 @@ proc parseCommandLine*(): core_config.Config =
           config.reposDir = absolutePath(arg)
           # Default config file in repos directory
           if config.repoConfigPath == getCurrentDir() / "repos.json":
-            config.repoConfigPath = config.reposDir / "repos.json"
+            config.repoConfigPath = config.reposDir / "repos.toml"
   
   return config

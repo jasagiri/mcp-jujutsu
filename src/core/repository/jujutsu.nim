@@ -2,8 +2,9 @@
 ##
 ## This module provides common functionality for interacting with Jujutsu repositories.
 
-import std/[asyncdispatch, json, options, os, osproc, strutils, tables]
+import std/[asyncdispatch, json, options, os, osproc, strutils, times, sequtils]
 import ../logging/logger
+import jujutsu_version
 
 type
   JujutsuRepo* = ref object
@@ -81,7 +82,18 @@ proc initJujutsuRepo*(path: string, initIfNotExists: bool = false): Future[Jujut
 
 proc getDiffForCommitRange*(repo: JujutsuRepo, commitRange: string): Future[DiffResult] {.async, gcsafe.} =
   ## Gets the diff for a commit range
-  let cmd = "jj diff -r '" & commitRange & "'"
+  let commands = await getJujutsuCommands()
+  
+  # Build version-appropriate diff command
+  let cmd = if ".." in commitRange:
+    let parts = commitRange.split("..")
+    if parts.len == 2:
+      commands.diffCommand & " --from '" & parts[0] & "' --to '" & parts[1] & "'"
+    else:
+      commands.diffCommand & " -r '" & commitRange & "'"
+  else:
+    commands.diffCommand & " -r '" & commitRange & "'"
+  
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
   if exitCode != 0:
@@ -163,6 +175,9 @@ proc getDiffForCommitRange*(repo: JujutsuRepo, commitRange: string): Future[Diff
 
 proc createCommit*(repo: JujutsuRepo, message: string, changes: seq[tuple[path: string, content: string]]): Future[string] {.async, gcsafe.} =
   ## Creates a commit with the specified changes
+  let commands = await getJujutsuCommands()
+  let capabilities = getJujutsuCapabilities(commands.version)
+  
   # First write the changes to the working directory
   for change in changes:
     let filePath = repo.path / change.path
@@ -175,26 +190,32 @@ proc createCommit*(repo: JujutsuRepo, message: string, changes: seq[tuple[path: 
     # Write the file
     writeFile(filePath, change.content)
   
-  # Add all changes
-  let (_, exitCode1) = await execCommand("jj add", repo.path)
-  if exitCode1 != 0:
-    raise newException(IOError, "Failed to add changes")
+  # Add files if version doesn't support auto-tracking
+  if not capabilities.hasAutoTracking:
+    let addCmd = buildAddCommand(commands, changes.mapIt(it.path))
+    if addCmd != "":
+      let (addOutput, addCode) = await execCommand(addCmd, repo.path)
+      if addCode != 0:
+        raise newException(IOError, "Failed to add files: " & addOutput)
   
-  # Create the commit
-  let cmd = "jj describe -m '" & message.replace("'", "''") & "'"
-  let (output, exitCode2) = await execCommand(cmd, repo.path)
+  # Get the current commit ID before making changes
+  let currentIdCmd = buildLogCommand(commands, "@", "commit_id.short()")
+  let (currentIdOutput, currentIdCode) = await execCommand(currentIdCmd, repo.path)
   
-  if exitCode2 != 0:
-    raise newException(IOError, "Failed to create commit: " & output)
+  if currentIdCode != 0:
+    raise newException(IOError, "Failed to get current commit ID: " & currentIdOutput)
   
-  # Extract commit ID
-  for line in output.splitLines():
-    if line.startsWith("Commit:"):
-      let parts = line.split(' ')
-      if parts.len >= 2:
-        return parts[1]
+  let currentId = currentIdOutput.strip()
   
-  raise newException(IOError, "Failed to extract commit ID from output")
+  # Describe the current change with the message
+  let descCmd = "jj describe -m \"" & message.replace("\"", "\\\"") & "\""
+  let (descOutput, exitCode) = await execCommand(descCmd, repo.path)
+  
+  if exitCode != 0:
+    raise newException(IOError, "Failed to describe commit: " & descOutput)
+  
+  # Return the commit ID we just created (the one with our message)
+  return currentId
 
 proc getCommitInfo*(repo: JujutsuRepo, commitId: string): Future[CommitInfo] {.async, gcsafe.} =
   ## Gets information about a specific commit

@@ -6,9 +6,10 @@ import std/[asyncdispatch, json, options, strutils, tables]
 import ../../core/config/config
 import ../../core/mcp/server as base_server
 import ../../core/repository/jujutsu
+import ../../core/repository/jujutsu_workspace
 import ../repository/manager
-import ../analyzer/cross_repo
 import ../tools/multi_repo
+import ../tools/workspace_tools
 
 type
   MultiRepoServer* = ref object
@@ -45,10 +46,38 @@ proc addTransport*(server: MultiRepoServer, transport: base_server.Transport) =
 # Multi repository specific methods
 proc registerMultiRepoTools*(server: MultiRepoServer) =
   ## Registers multi repository tools
-  server.registerTool("analyzeMultiRepoCommits", multi_repo.analyzeMultiRepoCommitsTool)
-  server.registerTool("proposeMultiRepoSplit", multi_repo.proposeMultiRepoSplitTool)
-  server.registerTool("executeMultiRepoSplit", multi_repo.executeMultiRepoSplitTool)
-  server.registerTool("automateMultiRepoSplit", multi_repo.automateMultiRepoSplitTool)
+  
+  # Create gcsafe wrappers for the tools
+  proc analyzeWrapper(params: JsonNode): Future[JsonNode] {.gcsafe.} =
+    {.cast(gcsafe).}:
+      return multi_repo.analyzeMultiRepoCommitsTool(params)
+  
+  proc proposeWrapper(params: JsonNode): Future[JsonNode] {.gcsafe.} =
+    {.cast(gcsafe).}:
+      return multi_repo.proposeMultiRepoSplitTool(params)
+  
+  proc executeWrapper(params: JsonNode): Future[JsonNode] {.gcsafe.} =
+    {.cast(gcsafe).}:
+      return multi_repo.executeMultiRepoSplitTool(params)
+  
+  proc automateWrapper(params: JsonNode): Future[JsonNode] {.gcsafe.} =
+    {.cast(gcsafe).}:
+      return multi_repo.automateMultiRepoSplitTool(params)
+  
+  server.registerTool("analyzeMultiRepoCommits", analyzeWrapper)
+  server.registerTool("proposeMultiRepoSplit", proposeWrapper)
+  server.registerTool("executeMultiRepoSplit", executeWrapper)
+  server.registerTool("automateMultiRepoSplit", automateWrapper)
+  
+  # Register workspace tools for multi-repository mode
+  server.registerTool("listWorkspaces", workspace_tools.listWorkspacesTool)
+  server.registerTool("createWorkspace", workspace_tools.createWorkspaceTool)
+  server.registerTool("switchWorkspace", workspace_tools.switchWorkspaceTool)
+  server.registerTool("analyzeWorkspaceChanges", workspace_tools.analyzeWorkspaceChangesTool)
+  server.registerTool("planWorkspaceWorkflow", workspace_tools.planWorkspaceWorkflowTool)
+  server.registerTool("executeWorkspaceWorkflow", workspace_tools.executeWorkspaceWorkflowTool)
+  server.registerTool("workspaceSemanticAnalysis", workspace_tools.workspaceSemanticAnalysisTool)
+  server.registerTool("workspaceOperation", workspace_tools.workspaceOperationTool)
 
 proc createRepoGroupHandler(server: MultiRepoServer): base_server.ResourceHandler =
   result = proc(id: string, params: JsonNode): Future[JsonNode] {.async.} =

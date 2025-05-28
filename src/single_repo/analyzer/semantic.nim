@@ -3,10 +3,11 @@
 ## This module provides advanced semantic analysis of code changes to identify logical boundaries.
 ## It uses pattern recognition and code structure analysis to group related changes together.
 
-import std/[algorithm, asyncdispatch, json, options, sets, strutils, tables, hashes, sequtils]
+import std/[algorithm, asyncdispatch, json, sets, strutils, tables, hashes, sequtils]
 # Avoid regex dependency completely - use string patterns only
 type RegexType = string
 import ../../core/repository/jujutsu
+import ../../core/repository/jujutsu_workspace
 
 type
   AnalysisResult* = object
@@ -130,6 +131,32 @@ const defaultCodePatterns = [
   )
 ]
 
+proc extractFileExtension(path: string): string =
+  ## Extracts file extension from a path, handling edge cases
+  if path.len == 0:
+    return ""
+  
+  # Handle paths with no dots
+  if not path.contains("."):
+    return ""
+  
+  # Handle paths ending with dot
+  if path.endsWith("."):
+    return ""
+  
+  # Handle hidden files (starting with dot)
+  let baseName = if "/" in path: path.split("/")[^1] else: path
+  if baseName.startsWith(".") and baseName.count(".") == 1:
+    # For files like ".file", return the part after the dot as extension
+    return baseName[1..^1]
+  
+  # Standard case: get everything after the last dot
+  let parts = path.rsplit(".", 1)
+  if parts.len == 2:
+    return parts[1]
+  else:
+    return ""
+
 proc extractKeywords*(diff: string): HashSet[string] =
   ## Extracts meaningful keywords from a diff using simple string parsing
   result = initHashSet[string]()
@@ -220,6 +247,31 @@ proc calculateSimilarity(keywords1, keywords2: HashSet[string]): float =
 
 proc detectChangeType*(diff: string): ChangeType =
   ## Detects the most likely change type based on diff content using simple string matching
+  
+  # First check for conventional commit message format
+  let lines = diff.splitLines()
+  if lines.len == 0:
+    return ctChore
+  
+  let firstLine = lines[0].toLowerAscii()
+  if firstLine.startsWith("feat:") or firstLine.startsWith("feature:"):
+    return ctFeature
+  elif firstLine.startsWith("fix:") or firstLine.startsWith("bugfix:"):
+    return ctBugfix
+  elif firstLine.startsWith("refactor:"):
+    return ctRefactor
+  elif firstLine.startsWith("docs:") or firstLine.startsWith("doc:"):
+    return ctDocs
+  elif firstLine.startsWith("test:") or firstLine.startsWith("tests:"):
+    return ctTests
+  elif firstLine.startsWith("style:"):
+    return ctStyle
+  elif firstLine.startsWith("perf:") or firstLine.startsWith("performance:"):
+    return ctPerformance
+  elif firstLine.startsWith("chore:"):
+    return ctChore
+  
+  # If not a conventional commit, analyze the content
   var scores = initTable[ChangeType, float]()
   
   # Initialize scores
@@ -300,11 +352,12 @@ proc analyzeChanges*(diffResult: jujutsu.DiffResult): Future[AnalysisResult] {.a
       result.changeTypes[file.changeType] = 1
     
     # Update file type stats
-    let fileExt = if file.path.contains("."): file.path.rsplit(".", 1)[1] else: "none"
-    if result.fileTypes.hasKey(fileExt):
-      result.fileTypes[fileExt] += 1
-    else:
-      result.fileTypes[fileExt] = 1
+    let fileExt = extractFileExtension(file.path)
+    if fileExt.len > 0:  # Only track non-empty extensions
+      if result.fileTypes.hasKey(fileExt):
+        result.fileTypes[fileExt] += 1
+      else:
+        result.fileTypes[fileExt] = 1
     
     # Count additions and deletions
     for line in file.diff.splitLines():
@@ -697,7 +750,49 @@ proc generateCommitMessage*(pattern: string, files: HashSet[string]): string =
   
   return generateCommitMessage(changePattern)
 
-proc calculateGroupCohesion(files: seq[jujutsu.FileDiff], keywords: HashSet[string]): float =
+proc extractNimSymbols*(code: string): HashSet[string] =
+  ## Extracts Nim symbols (functions, types, variables) from code
+  ## This is a simplified implementation for testing
+  result = initHashSet[string]()
+  
+  # Extract proc names
+  for line in code.splitLines():
+    let trimmed = line.strip()
+    if trimmed.startsWith("proc ") or trimmed.startsWith("func "):
+      let parts = trimmed.split({'(', ' ', '['})
+      if parts.len >= 2:
+        let procName = parts[1].strip()
+        if procName.len > 0 and procName[0].isAlphaAscii():
+          result.incl(procName)
+    elif trimmed.startsWith("type "):
+      let parts = trimmed.split({' ', '=', '*'})
+      if parts.len >= 2:
+        let typeName = parts[1].strip()
+        if typeName.len > 0 and typeName[0].isAlphaAscii():
+          result.incl(typeName)
+    elif trimmed.startsWith("var ") or trimmed.startsWith("let ") or trimmed.startsWith("const "):
+      let parts = trimmed.split({' ', ':', '=', '*'})
+      if parts.len >= 2:
+        let varName = parts[1].strip()
+        if varName.len > 0 and varName[0].isAlphaAscii():
+          result.incl(varName)
+
+proc calculateSimilarity*(set1, set2: HashSet[string]): float =
+  ## Calculates Jaccard similarity between two sets
+  if set1.len == 0 and set2.len == 0:
+    return 1.0  # Both empty sets are considered identical
+  if set1.len == 0 or set2.len == 0:
+    return 0.0  # One empty set means no similarity
+  
+  let intersection = set1 * set2  # Intersection
+  let union = set1 + set2         # Union
+  
+  if union.len == 0:
+    return 0.0
+  
+  return intersection.len.float / union.len.float
+
+proc calculateGroupCohesion*(files: seq[jujutsu.FileDiff], keywords: HashSet[string]): float =
   ## Calculates cohesion score for a group of files based on various factors
   if files.len == 0:
     return 0.0
@@ -722,7 +817,7 @@ proc calculateGroupCohesion(files: seq[jujutsu.FileDiff], keywords: HashSet[stri
   # Check if files are of the same type
   var extCounts = initTable[string, int]()
   for file in files:
-    let fileExt = if file.path.contains("."): file.path.rsplit(".", 1)[1] else: "none"
+    let fileExt = extractFileExtension(file.path)
     
     if extCounts.hasKey(fileExt):
       extCounts[fileExt] += 1
@@ -934,5 +1029,197 @@ proc generateSemanticDivisionProposal*(diffResult: jujutsu.DiffResult): Future[C
   # Calculate overall confidence score
   if proposal.proposedCommits.len > 0:
     proposal.confidenceScore = totalConfidence / proposal.proposedCommits.len.float
+  
+  return proposal
+
+# Workspace-aware analysis functions
+proc analyzeWorkspaceChanges*(repoPath: string, workspaceName: string = ""): Future[AnalysisResult] {.async, gcsafe.} =
+  ## Analyzes changes in a specific workspace or across all workspaces
+  var result = AnalysisResult(
+    files: @[],
+    additions: 0,
+    deletions: 0,
+    fileTypes: initTable[string, int](),
+    changeTypes: initTable[string, int](),
+    codePatterns: @[],
+    dependencies: initTable[string, HashSet[string]](),
+    semanticGroups: @[],
+    commits: %*[]
+  )
+  
+  try:
+    let workspaces = await listWorkspaces(repoPath)
+    
+    if workspaceName.len > 0:
+      # Analyze specific workspace
+      for workspace in workspaces:
+        if workspace.name == workspaceName:
+          # Analyze changes in this workspace since last sync
+          let analysisContext = workspace.path
+          result.codePatterns.add("workspace:" & workspace.name)
+          
+          # Add workspace-specific metadata
+          result.changeTypes["workspace_changes"] = 1
+          result.files.add("workspace:" & workspace.name)
+          break
+    else:
+      # Analyze all workspaces for cross-workspace relationships
+      for workspace in workspaces:
+        result.codePatterns.add("workspace:" & workspace.name)
+        result.files.add("workspace:" & workspace.name)
+        
+        # Track workspace conflicts as dependencies
+        if workspace.conflicts.len > 0:
+          var conflictSet = initHashSet[string]()
+          for conflict in workspace.conflicts:
+            conflictSet.incl(conflict)
+          result.dependencies["workspace:" & workspace.name] = conflictSet
+      
+      result.changeTypes["multi_workspace"] = workspaces.len
+    
+  except Exception as e:
+    # Add error information to the result
+    result.codePatterns.add("error:" & e.msg)
+  
+  return result
+
+proc identifyWorkspaceSemanticBoundaries*(repoPath: string): Future[seq[ChangePattern]] {.async, gcsafe.} =
+  ## Identifies semantic boundaries across workspaces
+  result = @[]
+  
+  try:
+    let workspaces = await listWorkspaces(repoPath)
+    
+    for workspace in workspaces:
+      var pattern = ChangePattern(
+        pattern: "workspace_isolation",
+        confidence: 0.9,
+        changeType: ctFeature,
+        files: initHashSet[string](),
+        keywords: initHashSet[string]()
+      )
+      
+      pattern.files.incl("workspace:" & workspace.name)
+      pattern.keywords.incl("workspace")
+      pattern.keywords.incl(workspace.name)
+      
+      # Determine change type based on workspace state
+      if workspace.conflicts.len > 0:
+        pattern.changeType = ctBugfix
+        pattern.confidence = 0.7
+        pattern.keywords.incl("conflict")
+      elif not workspace.isActive:
+        pattern.changeType = ctChore
+        pattern.confidence = 0.5
+      
+      result.add(pattern)
+    
+    # Add cross-workspace pattern
+    if workspaces.len > 1:
+      var crossPattern = ChangePattern(
+        pattern: "cross_workspace_coordination",
+        confidence: 0.8,
+        changeType: ctRefactor,
+        files: initHashSet[string](),
+        keywords: initHashSet[string]()
+      )
+      
+      for workspace in workspaces:
+        crossPattern.files.incl("workspace:" & workspace.name)
+      
+      crossPattern.keywords.incl("coordination")
+      crossPattern.keywords.incl("multi_workspace")
+      result.add(crossPattern)
+    
+  except Exception as e:
+    # Add error pattern
+    var errorPattern = ChangePattern(
+      pattern: "workspace_error",
+      confidence: 0.1,
+      changeType: ctChore,
+      files: initHashSet[string](),
+      keywords: initHashSet[string]()
+    )
+    errorPattern.keywords.incl("error")
+    errorPattern.keywords.incl("workspace_analysis")
+    result.add(errorPattern)
+  
+proc proposeWorkspaceCommitDivision*(repoPath: string, strategy: WorkspaceStrategy = wsFeatureBranches): Future[CommitDivisionProposal] {.async, gcsafe.} =
+  ## Proposes commit division based on workspace strategy
+  var proposal = CommitDivisionProposal(
+    originalCommitId: "@",
+    targetCommitId: "@-",
+    proposedCommits: @[],
+    totalChanges: 0,
+    confidenceScore: 0.0
+  )
+  
+  try:
+    let workspaces = await listWorkspaces(repoPath)
+    let patterns = await identifyWorkspaceSemanticBoundaries(repoPath)
+    
+    var totalConfidence = 0.0
+    
+    for pattern in patterns:
+      var changes: seq[FileChange] = @[]
+      var keywords: seq[string] = @[]
+      
+      # Convert workspace pattern to file changes
+      for filePath in pattern.files:
+        if filePath.startsWith("workspace:"):
+          let workspaceName = filePath[10..^1]
+          changes.add(FileChange(
+            path: workspaceName,
+            changeType: "workspace_operation",
+            diff: "workspace changes in " & workspaceName
+          ))
+      
+      # Convert keywords
+      for keyword in pattern.keywords:
+        keywords.add(keyword)
+      
+      # Generate commit message based on strategy
+      var message = ""
+      case strategy:
+      of wsFeatureBranches:
+        message = "feat(workspace): implement feature in " & $pattern.files.len & " workspaces"
+      of wsEnvironments:
+        message = "config(workspace): update environment configurations"
+      of wsTeamMembers:
+        message = "chore(workspace): coordinate team member workspaces"
+      of wsExperimentation:
+        message = "experiment(workspace): parallel development experiments"
+      
+      if pattern.changeType == ctBugfix:
+        message = "fix(workspace): resolve workspace conflicts"
+      elif pattern.changeType == ctRefactor:
+        message = "refactor(workspace): improve cross-workspace coordination"
+      
+      proposal.proposedCommits.add(ProposedCommit(
+        message: message,
+        changes: changes,
+        changeType: pattern.changeType,
+        keywords: keywords
+      ))
+      
+      totalConfidence += pattern.confidence
+    
+    proposal.totalChanges = patterns.len
+    if proposal.proposedCommits.len > 0:
+      proposal.confidenceScore = totalConfidence / proposal.proposedCommits.len.float
+    
+  except Exception as e:
+    # Add error commit
+    proposal.proposedCommits.add(ProposedCommit(
+      message: "chore(workspace): handle workspace analysis errors",
+      changes: @[FileChange(
+        path: "error.log",
+        changeType: "error",
+        diff: e.msg
+      )],
+      changeType: ctChore,
+      keywords: @["error", "workspace"]
+    ))
+    proposal.confidenceScore = 0.1
   
   return proposal

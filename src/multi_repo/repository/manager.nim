@@ -3,7 +3,8 @@
 ## This module implements multi-repository management with support for
 ## dependency-ordered execution and configuration persistence.
 
-import std/[algorithm, asyncdispatch, json, options, os, sets, strutils, tables]
+import std/[asyncdispatch, json, options, os, strutils, tables]
+import parsetoml
 import ../../core/repository/jujutsu
 
 type
@@ -151,8 +152,64 @@ proc getDependencyOrder*(manager: RepositoryManager): seq[string] =
   # Return the repositories in dependency order
   result = sortedNodes
 
+proc loadRepositoryConfigFromToml(path: string, rootDir: string): RepositoryManager =
+  ## Loads repository configuration from a TOML file
+  result = newRepositoryManager(rootDir)
+  result.configPath = path
+  
+  let tomlData = parsetoml.parseFile(path)
+  
+  if tomlData.hasKey("repositories"):
+    let repos = tomlData["repositories"]
+    if repos.kind == TomlValueKind.Array:
+      for repoToml in repos.getElems():
+        var dependencies: seq[string] = @[]
+        
+        if repoToml.hasKey("dependencies"):
+          let deps = repoToml["dependencies"]
+          if deps.kind == TomlValueKind.Array:
+            for dep in deps.getElems():
+              dependencies.add(dep.getStr())
+        
+        # Use absolute path if relative path is provided
+        var repoPath = repoToml["path"].getStr()
+        if not repoPath.isAbsolute:
+          repoPath = rootDir / repoPath
+        
+        result.addRepository(
+          repoToml["name"].getStr(),
+          repoPath,
+          dependencies
+        )
+
+proc loadRepositoryConfigFromJson(path: string, rootDir: string): RepositoryManager =
+  ## Loads repository configuration from a JSON file
+  result = newRepositoryManager(rootDir)
+  result.configPath = path
+  
+  let config = parseJson(readFile(path))
+  
+  if config.hasKey("repositories") and config["repositories"].kind == JArray:
+    for repoJson in config["repositories"]:
+      var dependencies: seq[string] = @[]
+      
+      if repoJson.hasKey("dependencies") and repoJson["dependencies"].kind == JArray:
+        for dep in repoJson["dependencies"]:
+          dependencies.add(dep.getStr)
+      
+      # Use absolute path if relative path is provided
+      var repoPath = repoJson["path"].getStr
+      if not repoPath.isAbsolute:
+        repoPath = rootDir / repoPath
+      
+      result.addRepository(
+        repoJson["name"].getStr,
+        repoPath,
+        dependencies
+      )
+
 proc loadRepositoryConfig*(path: string): Future[RepositoryManager] {.async.} =
-  ## Loads repository configuration from a file
+  ## Loads repository configuration from a file (supports TOML and JSON)
   let rootDir = path.parentDir
   result = newRepositoryManager(rootDir)
   result.configPath = path
@@ -160,46 +217,54 @@ proc loadRepositoryConfig*(path: string): Future[RepositoryManager] {.async.} =
   if not fileExists(path):
     return result
   
+  # Determine file type by extension
+  let ext = path.splitFile().ext.toLowerAscii()
+  
   try:
-    let config = parseJson(readFile(path))
-    
-    if config.hasKey("repositories") and config["repositories"].kind == JArray:
-      for repoJson in config["repositories"]:
-        var dependencies: seq[string] = @[]
-        
-        if repoJson.hasKey("dependencies") and repoJson["dependencies"].kind == JArray:
-          for dep in repoJson["dependencies"]:
-            dependencies.add(dep.getStr)
-        
-        # Use absolute path if relative path is provided
-        var repoPath = repoJson["path"].getStr
-        if not repoPath.isAbsolute:
-          repoPath = rootDir / repoPath
-        
-        result.addRepository(
-          repoJson["name"].getStr,
-          repoPath,
-          dependencies
-        )
+    case ext
+    of ".toml":
+      result = loadRepositoryConfigFromToml(path, rootDir)
+    of ".json":
+      result = loadRepositoryConfigFromJson(path, rootDir)
+    else:
+      # Try TOML first as default, then JSON if that fails
+      try:
+        result = loadRepositoryConfigFromToml(path, rootDir)
+      except CatchableError:
+        result = loadRepositoryConfigFromJson(path, rootDir)
   except Exception as e:
     echo "Error loading repository configuration: " & e.msg
     # Still return empty manager on error, but now with proper logging
 
-proc saveConfig*(manager: RepositoryManager, path: string = ""): Future[bool] {.async.} =
-  ## Saves repository configuration to a file
-  ## Returns true if successful, false otherwise
-  let configPath = if path != "": path else: manager.configPath
-  
-  if configPath == "":
-    echo "Error: No configuration file path specified"
-    return false
-  
+proc saveConfigAsToml(manager: RepositoryManager, path: string): bool =
+  ## Saves repository configuration as TOML
   try:
-    # Create parent directory if it doesn't exist
-    let parentDir = configPath.parentDir
-    if not dirExists(parentDir):
-      createDir(parentDir)
+    var tomlStr = ""
     
+    for name, repo in manager.repos:
+      tomlStr.add("[[repositories]]\n")
+      tomlStr.add("name = \"" & repo.name & "\"\n")
+      tomlStr.add("path = \"" & repo.path & "\"\n")
+      
+      if repo.dependencies.len > 0:
+        tomlStr.add("dependencies = [")
+        for i, dep in repo.dependencies:
+          if i > 0:
+            tomlStr.add(", ")
+          tomlStr.add("\"" & dep & "\"")
+        tomlStr.add("]\n")
+      
+      tomlStr.add("\n")
+    
+    writeFile(path, tomlStr)
+    return true
+  except Exception as e:
+    echo "Error saving TOML configuration: " & e.msg
+    return false
+
+proc saveConfigAsJson(manager: RepositoryManager, path: string): bool =
+  ## Saves repository configuration as JSON
+  try:
     # Create JSON representation
     var repositoriesArray = newJArray()
     
@@ -222,8 +287,39 @@ proc saveConfig*(manager: RepositoryManager, path: string = ""): Future[bool] {.
     }
     
     # Write to file
-    writeFile(configPath, pretty(configJson))
+    writeFile(path, pretty(configJson))
     return true
+  except Exception as e:
+    echo "Error saving JSON configuration: " & e.msg
+    return false
+
+proc saveConfig*(manager: RepositoryManager, path: string = ""): Future[bool] {.async.} =
+  ## Saves repository configuration to a file (supports TOML and JSON)
+  ## Returns true if successful, false otherwise
+  let configPath = if path != "": path else: manager.configPath
+  
+  if configPath == "":
+    echo "Error: No configuration file path specified"
+    return false
+  
+  try:
+    # Create parent directory if it doesn't exist
+    let parentDir = configPath.parentDir
+    if not dirExists(parentDir):
+      createDir(parentDir)
+    
+    # Determine file type by extension
+    let ext = configPath.splitFile().ext.toLowerAscii()
+    
+    case ext
+    of ".toml":
+      return saveConfigAsToml(manager, configPath)
+    of ".json":
+      return saveConfigAsJson(manager, configPath)
+    else:
+      # Default to TOML
+      return saveConfigAsToml(manager, configPath)
+      
   except Exception as e:
     echo "Error saving repository configuration: " & e.msg
     return false

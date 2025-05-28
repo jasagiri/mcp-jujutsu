@@ -1,0 +1,51 @@
+# MCP-Jujutsu Configuration File
+# This is an example configuration file in TOML format
+
+[general]
+# Server mode: "single" or "multi"
+mode = "single"
+
+# Server name for identification
+server_name = "MCP-Jujutsu"
+
+# Server port
+server_port = 8080
+
+# Logging level: "debug", "info", "warn", "error"
+log_level = "info"
+
+# Enable verbose output
+verbose = false
+
+[transport]
+# Enable HTTP transport
+http = true
+
+# HTTP host to bind to
+http_host = "127.0.0.1"
+
+# HTTP port to listen on
+http_port = 8080
+
+# Enable stdio transport for CLI integration
+stdio = false
+
+[repository]
+# Path to repository (single-repo mode)
+path = "."
+
+# Directory containing repositories (multi-repo mode)
+repos_dir = "."
+
+# Path to repository configuration file (multi-repo mode)
+config_path = "./repos.toml"
+
+[ai]
+# URL for AI model API endpoint
+endpoint = "https://api.openai.com/v1/chat/completions"
+
+# API key for AI service authentication (set via environment variable for security)
+api_key = ""
+
+# AI model identifier for semantic analysis
+model = "gpt-4"

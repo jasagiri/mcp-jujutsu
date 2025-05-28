@@ -2,12 +2,14 @@
 ##
 ## This module implements the MCP server for single repository mode using composition.
 
-import std/[asyncdispatch, json, options, strutils, tables, sets, sequtils]
+import std/[asyncdispatch, json, options, strutils, sets, sequtils]
 import ../../core/config/config
 import ../../core/mcp/server as base_server
 import ../../core/repository/jujutsu
+import ../../core/repository/jujutsu_workspace
 import ../tools/semantic_divide
 import ../analyzer/semantic
+import ../../multi_repo/tools/workspace_tools
 
 type
   SingleRepoServer* = ref object
@@ -49,6 +51,16 @@ proc registerSingleRepoTools*(server: SingleRepoServer) =
   server.registerTool("proposeCommitDivision", semantic_divide.proposeCommitDivisionTool)
   server.registerTool("executeCommitDivision", semantic_divide.executeCommitDivisionTool)
   server.registerTool("automateCommitDivision", semantic_divide.automateCommitDivisionTool)
+  
+  # Register workspace tools for single repository mode
+  server.registerTool("listWorkspaces", workspace_tools.listWorkspacesTool)
+  server.registerTool("createWorkspace", workspace_tools.createWorkspaceTool)
+  server.registerTool("switchWorkspace", workspace_tools.switchWorkspaceTool)
+  server.registerTool("analyzeWorkspaceChanges", workspace_tools.analyzeWorkspaceChangesTool)
+  server.registerTool("planWorkspaceWorkflow", workspace_tools.planWorkspaceWorkflowTool)
+  server.registerTool("executeWorkspaceWorkflow", workspace_tools.executeWorkspaceWorkflowTool)
+  server.registerTool("workspaceSemanticAnalysis", workspace_tools.workspaceSemanticAnalysisTool)
+  server.registerTool("workspaceOperation", workspace_tools.workspaceOperationTool)
 
 proc createJujutsuRepoHandler(): base_server.ResourceHandler =
   result = proc(id: string, params: JsonNode): Future[JsonNode] {.async.} =
@@ -287,12 +299,50 @@ proc createCommitHistoryHandler(server: SingleRepoServer): base_server.ResourceH
     except Exception as e:
       return %*{"error": "Failed to get commit history: " & e.msg}
 
+proc createWorkspaceHandler(server: SingleRepoServer): base_server.ResourceHandler =
+  result = proc(id: string, params: JsonNode): Future[JsonNode] {.async.} =
+    # Ensure we have a repository connection
+    if server.jjRepo == nil:
+      try:
+        if params.hasKey("repoPath"):
+          server.jjRepo = await jujutsu.initJujutsuRepo(params["repoPath"].getStr)
+        else:
+          return %*{"error": "No repository connection and no 'repoPath' provided"}
+      except Exception as e:
+        return %*{"error": "Failed to initialize repository: " & e.msg}
+    
+    try:
+      # Get workspace information
+      let workspaces = await listWorkspaces(server.jjRepo.path)
+      
+      # Convert to resource response
+      var workspacesJson = newJArray()
+      for workspace in workspaces:
+        workspacesJson.add(%*{
+          "name": workspace.name,
+          "path": workspace.path,
+          "repository": workspace.repository,
+          "isActive": workspace.isActive,
+          "lastSync": workspace.lastSync,
+          "conflicts": workspace.conflicts
+        })
+      
+      return %*{
+        "id": id,
+        "type": "workspaces",
+        "workspaces": workspacesJson,
+        "status": "complete"
+      }
+    except Exception as e:
+      return %*{"error": "Failed to get workspace information: " & e.msg}
+
 proc registerSingleRepoResources*(server: SingleRepoServer) =
   ## Registers single repository resource types
   server.registerResourceType("jujutsuRepo", createJujutsuRepoHandler())
   server.registerResourceType("commitDiff", createCommitDiffHandler(server))
   server.registerResourceType("commitAnalysis", createCommitAnalysisHandler(server))
   server.registerResourceType("commitHistory", createCommitHistoryHandler(server))
+  server.registerResourceType("workspaces", createWorkspaceHandler(server))
 
 # Delegated MCP protocol methods
 proc handleInitialize*(server: SingleRepoServer, params: JsonNode): Future[JsonNode] {.async.} =

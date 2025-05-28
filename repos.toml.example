@@ -1,0 +1,31 @@
+# Multi-Repository Configuration File
+# This file defines repositories for multi-repo mode
+
+[[repositories]]
+name = "core-lib"
+path = "./repos/core-lib"
+description = "Core library with shared models and utilities"
+dependencies = []
+
+[[repositories]]
+name = "api-service"
+path = "./repos/api-service"
+description = "API service that uses core-lib"
+dependencies = ["core-lib"]
+
+[[repositories]]
+name = "frontend-app"
+path = "./repos/frontend-app"
+description = "Frontend application"
+dependencies = ["api-service"]
+
+# Additional settings for multi-repo analysis
+[analysis]
+# Enable cross-repository dependency analysis
+analyze_dependencies = true
+
+# Enable semantic grouping across repositories
+semantic_grouping = true
+
+# Maximum depth for dependency analysis
+max_dependency_depth = 3

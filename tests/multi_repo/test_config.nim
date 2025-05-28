@@ -13,7 +13,7 @@ suite "Multi Repository Configuration Tests":
     check config.serverMode == MultiRepo
     # Default config sets these to current directory values
     check config.reposDir == getCurrentDir()
-    check config.repoConfigPath == getCurrentDir() / "repos.json"
+    check config.repoConfigPath == getCurrentDir() / "repos.toml"
 
   test "Multi Repo Specific Fields":
     var config = core_config.newDefaultConfig()

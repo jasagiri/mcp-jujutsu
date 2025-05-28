@@ -1,194 +1,303 @@
 # MCP-Jujutsu Examples
 
-This directory contains example code demonstrating various use cases for MCP-Jujutsu.
+This directory contains comprehensive examples demonstrating various use cases for MCP-Jujutsu, from basic commit analysis to advanced multi-repository workflows.
 
-## Example Files
+## Quick Start
 
-### 1. `example.nim` (Original)
-Basic example showing simple client usage.
+```bash
+# 1. Start the MCP server
+nimble run                    # Single repo mode
+nimble run -- --hub          # Multi-repo mode
 
-### 2. `basic_usage.nim`
-Comprehensive examples of basic MCP-Jujutsu operations:
-- Analyzing recent commits
-- Trying different division strategies
-- Automated division workflow
-- Handling large commits
-- Custom confidence thresholds
-- Error handling patterns
+# 2. Run the quickstart example
+nim c -r examples/example.nim
 
-### 3. `multi_repo_examples.nim`
-Examples for multi-repository mode:
-- Basic multi-repo analysis
-- Selective repository analysis
-- Coordinated repository splits
-- Dependency-aware workflows
-- Monorepo with submodules
-- Automated multi-repo operations
-- Safe splits with rollback
+# 3. Explore other examples
+nim c -r examples/basic_usage.nim
+```
 
-### 4. `advanced_scenarios.nim`
-Advanced usage patterns:
-- Progressive refinement strategy
-- Intelligent strategy selection
-- Commit message quality enforcement
-- Handling merge commits
-- Time-based commit grouping
-- Cross-branch analysis
-- Incremental processing
-- Custom scoring and filtering
+## Example Files Overview
+
+### Core Examples
+
+1. **`example.nim`** - Quick Start
+   - Simplest way to use MCP-Jujutsu
+   - Analyze commits and propose divisions
+   - Interactive execution flow
+
+2. **`basic_usage.nim`** - Essential Operations
+   - Analyzing recent commits
+   - Comparing division strategies
+   - Automated workflows with validation
+   - Handling large commits
+   - Custom confidence thresholds
+   - Robust error handling
+
+### Advanced Examples
+
+3. **`advanced_scenarios.nim`** - Complex Patterns
+   - Progressive refinement strategies
+   - Intelligent strategy selection
+   - Commit quality enforcement
+   - Merge commit handling
+   - Time-based grouping
+   - Cross-branch analysis
+   - Custom scoring algorithms
+
+4. **`semantic_commit_division.nim`** - Semantic Analysis
+   - Local semantic analysis demonstration
+   - MCP client semantic division
+   - Strategy comparison
+   - Automated semantic workflows
+
+### Specialized Examples
+
+5. **`conflict_resolution_strategies.nim`** - Conflict Management
+   - Local conflict resolution patterns
+   - MCP-based conflict analysis
+   - Merge conflict prediction
+   - Resolution recommendations
+
+6. **`workspace_workflows.nim`** - Workspace Management
+   - Feature branch workflows
+   - Team collaboration patterns
+   - Environment-based deployments
+   - Experimental development
+   - Advanced orchestration
+
+7. **`multi_repo_examples.nim`** - Multi-Repository Operations
+   - Cross-repository analysis
+   - Coordinated splits
+   - Dependency detection
+   - Monorepo support
+   - Automated multi-repo workflows
+
+8. **`multi_repo_workflow.nim`** - Multi-Repo Orchestration
+   - Microservices architecture example
+   - Cross-repository dependencies
+   - Coordinated releases
 
 ## Running the Examples
 
 ### Prerequisites
 
-1. Start the MCP-Jujutsu server:
+1. **Install MCP-Jujutsu**:
 ```bash
-# For basic examples (single repo mode)
-./scripts/start-server.sh 8080
-
-# For multi-repo examples
-./scripts/start-server.sh 8080 multi
+nimble install
 ```
 
-2. Ensure you have a Jujutsu repository:
+2. **Start the Server**:
+```bash
+# Single repository mode (default)
+nimble run
+
+# Multi-repository mode
+nimble run -- --hub --port=8080
+
+# With custom repository
+nimble run -- --repo-path=/path/to/repo
+```
+
+3. **Ensure Jujutsu Repository**:
 ```bash
 cd /path/to/your/repo
 jj init --git-repo .
 ```
 
-### Running Individual Examples
+### Running Examples
 
 ```bash
-# Compile and run an example
-nim c -r examples/basic_usage.nim
+# Quick start
+nim c -r examples/example.nim
 
-# Or compile first, then run
-nim c examples/basic_usage.nim
-./examples/basic_usage
+# With repository path
+nim c -r examples/basic_usage.nim /path/to/repo
 
-# Run with specific options
+# Compile for performance
 nim c -d:release -r examples/advanced_scenarios.nim
-```
 
-### Running All Examples
-
-```bash
-# Run all single-repo examples
-nim c -r examples/basic_usage.nim
-nim c -r examples/advanced_scenarios.nim
-
-# Run multi-repo examples (requires multi mode)
-nim c -r examples/multi_repo_examples.nim
+# Run all examples
+for f in examples/*.nim; do
+  echo "Running $f..."
+  nim c -r "$f"
+done
 ```
 
 ## Example Categories
 
-### Basic Operations
-- Commit analysis
-- Simple divisions
-- Strategy comparison
-- Error handling
+### 🚀 Getting Started
+- `example.nim` - Minimal working example
+- `basic_usage.nim` - Common operations
 
-### Multi-Repository Operations
-- Cross-repo analysis
-- Dependency detection
-- Coordinated splits
-- Monorepo support
+### 🧠 Semantic Analysis
+- `semantic_commit_division.nim` - Intelligent commit splitting
+- `advanced_scenarios.nim` - Complex analysis patterns
 
-### Advanced Techniques
-- Progressive refinement
-- Intelligent strategy selection
-- Custom validation
-- Performance optimization
+### 👥 Collaboration
+- `workspace_workflows.nim` - Team development patterns
+- `conflict_resolution_strategies.nim` - Handling conflicts
 
-## Customizing Examples
-
-Each example can be modified to suit your needs:
-
-1. **Change the server URL**:
-```nim
-let client = newMcpClient("http://your-server:8080/mcp")
-```
-
-2. **Adjust parameters**:
-```nim
-let proposal = await client.proposeCommitDivision(
-  commitRange = "main..feature",  # Your range
-  strategy = "semantic",          # Your strategy
-  maxCommits = 20                 # Your limit
-)
-```
-
-3. **Add custom logic**:
-```nim
-# Add your own validation
-if proposal.confidence < 0.9:
-  echo "Need manual review"
-```
+### 🏢 Enterprise
+- `multi_repo_examples.nim` - Multi-repository management
+- `multi_repo_workflow.nim` - Orchestrated workflows
 
 ## Common Patterns
+
+### Client Connection
+```nim
+import mcp_jujutsu/client/client
+
+let client = newMcpClient("http://localhost:8080/mcp")
+```
 
 ### Error Handling
 ```nim
 try:
-  let result = await client.analyzeCommitRange(range)
+  let result = await client.analyzeCommitRange(repo, "HEAD~5..HEAD")
 except MpcError as e:
-  echo "MCP error: ", e.msg
+  echo fmt"MCP Error: {e.msg}"
+  # Handle MCP-specific errors
 except Exception as e:
-  echo "Unexpected: ", e.msg
+  echo fmt"Error: {e.msg}"
 ```
 
-### Dry Run First
+### Dry Run Pattern
 ```nim
-# Always test with dry run
-let test = await client.automateCommitDivision(
-  commitRange = range,
-  dryRun = true
+# Always test first
+let proposal = await client.proposeCommitDivision(
+  repo, range, "semantic", "medium", 10
 )
 
-if test.success:
-  # Execute for real
-  let result = await client.automateCommitDivision(
-    commitRange = range,
-    dryRun = false
-  )
+if proposal["proposal"]["confidence"].getFloat >= 0.8:
+  # High confidence - execute
+  let result = await client.executeCommitDivision(repo, proposal["proposal"])
+else:
+  echo "Manual review needed"
 ```
 
 ### Progress Monitoring
 ```nim
-echo "Starting analysis..."
+echo "Analyzing large repository..."
 let start = epochTime()
-let result = await client.analyzeCommitRange(range)
-echo fmt"Completed in {epochTime() - start:.2f}s"
+let result = await client.analyzeCommitRange(repo, range)
+echo fmt"Analysis completed in {epochTime() - start:.2f}s"
+```
+
+## Configuration Tips
+
+### Server Configuration
+```toml
+# mcp-jujutsu.toml
+[server]
+port = 8080
+host = "127.0.0.1"
+
+[repository]
+path = "/path/to/repo"
+
+[analysis]
+cache_enabled = true
+max_commits = 50
+```
+
+### Client Options
+```nim
+# Custom timeout for large operations
+let client = newMcpClient("http://localhost:8080/mcp", timeout = 60000)
+
+# Batch operations
+let results = await client.batchCall([
+  ("analyzeCommitRange", %*{"repo": repo1, "range": range1}),
+  ("analyzeCommitRange", %*{"repo": repo2, "range": range2})
+])
 ```
 
 ## Troubleshooting
 
 ### Connection Issues
-- Ensure server is running: `curl http://localhost:8080/health`
-- Check server logs: `tail -f logs/mcp-jujutsu.log`
+```bash
+# Check server health
+curl http://localhost:8080/health
+
+# View server logs
+tail -f logs/mcp-jujutsu.log
+
+# Test with CLI
+echo '{"method": "listWorkspaces", "params": {}}' | mcp-jujutsu --stdio
+```
 
 ### Repository Issues
-- Verify jj is initialized: `jj status`
-- Check working directory: `pwd`
+```bash
+# Verify Jujutsu setup
+jj status
+jj log --limit 10
 
-### Performance Issues
-- Use appropriate strategies for large repos
-- Enable caching in server config
-- Consider incremental processing
+# Check permissions
+ls -la .jj/
+```
 
-## Contributing Examples
+### Performance Optimization
+- Use appropriate strategies for repository size
+- Enable server-side caching
+- Consider `--parallel` flag for multi-repo
+- Use incremental processing for large histories
 
-To add new examples:
+## Writing New Examples
 
-1. Create a new `.nim` file in this directory
-2. Include comprehensive comments
-3. Add error handling
-4. Update this README
-5. Test with both single and multi modes
+When creating new examples:
+
+1. **Use Clear Structure**:
+```nim
+proc demonstrateFeature() {.async.} =
+  echo "=== Feature Demonstration ==="
+  # Setup
+  # Operation
+  # Verification
+  # Cleanup
+```
+
+2. **Include Documentation**:
+```nim
+## Example: Advanced Feature
+## Demonstrates how to use advanced features
+## Requires: MCP server in multi-repo mode
+```
+
+3. **Handle Errors Gracefully**:
+```nim
+try:
+  # operations
+except MpcError:
+  # MCP-specific handling
+except:
+  # General error handling
+```
+
+4. **Make It Runnable**:
+```nim
+when isMainModule:
+  waitFor main()
+```
 
 ## Additional Resources
 
-- [API Reference](../docs/API_REFERENCE.md)
-- [Configuration Guide](../docs/CONFIGURATION.md)
-- [Main README](../README.md)
+- [API Reference](../docs/API_REFERENCE.md) - Complete API documentation
+- [Configuration Guide](../docs/CONFIGURATION.md) - Server configuration
+- [Quick Start Guide](../docs/QUICK_START.md) - Getting started
+- [Main Documentation](../README.md) - Project overview
+
+## Contributing
+
+To contribute examples:
+
+1. Create descriptive, self-contained examples
+2. Include error handling and validation
+3. Add comments explaining the logic
+4. Test with both single and multi-repo modes
+5. Update this README with your example
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/disruptek/mcp-jujutsu/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/disruptek/mcp-jujutsu/discussions)
+- **Documentation**: [Full Docs](../docs/)

@@ -3,7 +3,7 @@
 ## This module implements advanced cross-repository analysis functionality
 ## including dependency detection, semantic grouping, and coordinated commit proposals.
 
-import std/[asyncdispatch, json, options, sets, strutils, tables, hashes, sequtils, algorithm]
+import std/[asyncdispatch, options, sets, strutils, tables, hashes, sequtils, algorithm]
 import ../repository/manager
 import ../../core/repository/jujutsu
 import ../../single_repo/analyzer/semantic as single_semantic
@@ -105,7 +105,7 @@ proc newDefaultAnalysisConfig*(): CrossRepoAnalysisConfig =
 proc detectDependencies*(diff: CrossRepoDiff): seq[DependencyRelation] =
   ## Detects dependencies between repositories using pattern matching and semantic analysis
   ## This is the simple detection version that works synchronously for testing
-  var result: seq[DependencyRelation] = @[]
+  result = @[]
 
   # Extract repository names for easier matching
   var repoNames = newSeq[string]()
@@ -162,7 +162,7 @@ proc detectDependencies*(diff: CrossRepoDiff): seq[DependencyRelation] =
 
 proc identifyCrossRepoDependencies*(diff: CrossRepoDiff): Future[seq[DependencyRelation]] {.async.} =
   ## Identifies dependencies between repositories based on changes with advanced detection
-  var result: seq[DependencyRelation] = @[]
+  result = @[]
   
   # First use the simple detection for basic dependencies
   let basicDependencies = detectDependencies(diff)
@@ -287,7 +287,7 @@ proc buildDependencyGraph*(dependencies: seq[DependencyRelation]): CrossRepoDepe
 
 proc analyzeFilesAcrossRepos*(diff: CrossRepoDiff): Table[string, Table[string, seq[jujutsu.FileDiff]]] =
   ## Groups files by type across repositories
-  var result = initTable[string, Table[string, seq[jujutsu.FileDiff]]]()
+  result = initTable[string, Table[string, seq[jujutsu.FileDiff]]]()
   
   for repoName, files in diff.changes:
     for file in files:
@@ -305,7 +305,7 @@ proc analyzeFilesAcrossRepos*(diff: CrossRepoDiff): Table[string, Table[string, 
 
 proc analyzeDirectoriesAcrossRepos*(diff: CrossRepoDiff): Table[string, Table[string, seq[jujutsu.FileDiff]]] =
   ## Groups files by directory structure across repositories
-  var result = initTable[string, Table[string, seq[jujutsu.FileDiff]]]()
+  result = initTable[string, Table[string, seq[jujutsu.FileDiff]]]()
   
   for repoName, files in diff.changes:
     for file in files:
@@ -324,7 +324,7 @@ proc analyzeDirectoriesAcrossRepos*(diff: CrossRepoDiff): Table[string, Table[st
 
 proc analyzeSemanticsAcrossRepos*(diff: CrossRepoDiff): Table[ChangeType, Table[string, seq[jujutsu.FileDiff]]] =
   ## Groups files by semantic meaning across repositories
-  var result = initTable[ChangeType, Table[string, seq[jujutsu.FileDiff]]]()
+  result = initTable[ChangeType, Table[string, seq[jujutsu.FileDiff]]]()
   
   # Initialize all change types
   for ct in ChangeType:
@@ -341,7 +341,7 @@ proc analyzeSemanticsAcrossRepos*(diff: CrossRepoDiff): Table[ChangeType, Table[
     for file in files:
       # Create temporary diffResult to analyze with single-repo semantic analyzer
       let tempDiff = jujutsu.DiffResult(
-        commitRange: "HEAD~1..HEAD",
+        commitRange: "@~..@",
         files: @[file]
       )
       
@@ -368,7 +368,7 @@ proc analyzeDependencyBasedChanges(
   dependencies: seq[DependencyRelation]
 ): Table[string, Table[string, seq[jujutsu.FileDiff]]] =
   ## Groups files by dependency relationships across repositories
-  var result = initTable[string, Table[string, seq[jujutsu.FileDiff]]]()
+  result = initTable[string, Table[string, seq[jujutsu.FileDiff]]]()
   
   # Create groups based on dependencies
   for dependency in dependencies:

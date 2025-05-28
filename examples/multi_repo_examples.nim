@@ -1,11 +1,13 @@
 ## Multi-Repository Examples for MCP-Jujutsu
 ## This file demonstrates how to work with multiple repositories
+## using the MCP server in multi-repo (hub) mode
 
 import asyncdispatch
 import json
 import strformat
 import tables
-import ../src/client/client
+import os
+import mcp_jujutsu/client/client
 
 # Example 1: Basic multi-repo analysis
 proc analyzeMultipleRepos() {.async.} =
@@ -13,22 +15,26 @@ proc analyzeMultipleRepos() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Analyze changes across all repositories
-  let analysis = await client.analyzeMultiRepoCommits(
-    commitRange = "HEAD~3..HEAD"
-  )
+  # Note: The server should be running in multi-repo mode (--hub flag)
+  # Analyze changes across all configured repositories
+  let analysisParams = %*{
+    "commitRange": "HEAD~3..HEAD"
+  }
+  
+  let response = await client.call("analyzeMultiRepoCommits", analysisParams)
+  let analysis = response["result"]
   
   echo "Repository changes:"
-  for repo, stats in analysis.repositories:
+  for repo, stats in analysis["repositories"]:
     echo fmt"\n{repo}:"
-    echo fmt"  Files changed: {stats.fileCount}"
-    echo fmt"  Lines added: {stats.additions}"
-    echo fmt"  Lines deleted: {stats.deletions}"
+    echo fmt"  Files changed: {stats["fileCount"].getInt}"
+    echo fmt"  Lines added: {stats["additions"].getInt}"
+    echo fmt"  Lines deleted: {stats["deletions"].getInt}"
   
-  if analysis.hasCrossDependencies:
+  if analysis["hasCrossDependencies"].getBool:
     echo "\nCross-repository dependencies found:"
-    for dep in analysis.crossDependencies:
-      echo fmt"  {dep.from} -> {dep.to} ({dep.type})"
+    for dep in analysis["crossDependencies"]:
+      echo fmt"  {dep["from"].getStr} -> {dep["to"].getStr} ({dep["type"].getStr})"
 
 # Example 2: Selective repository analysis
 proc analyzeSpecificRepos() {.async.} =
@@ -36,15 +42,18 @@ proc analyzeSpecificRepos() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Only analyze frontend and shared repositories
-  let analysis = await client.analyzeMultiRepoCommits(
-    commitRange = "HEAD~1..HEAD",
-    repositories = @["frontend", "shared"]
-  )
+  # Only analyze specific repositories
+  let analysisParams = %*{
+    "commitRange": "HEAD~1..HEAD",
+    "repositories": ["frontend", "shared"]
+  }
+  
+  let response = await client.call("analyzeMultiRepoCommits", analysisParams)
+  let analysis = response["result"]
   
   echo "Selected repository analysis:"
-  for repo, stats in analysis.repositories:
-    echo fmt"  {repo}: {stats.fileCount} files changed"
+  for repo, stats in analysis["repositories"]:
+    echo fmt"  {repo}: {stats["fileCount"].getInt} files changed"
 
 # Example 3: Coordinated multi-repo split
 proc coordinatedSplit() {.async.} =
@@ -52,24 +61,27 @@ proc coordinatedSplit() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Propose a coordinated split
-  let proposal = await client.proposeMultiRepoSplit(
-    commitRange = "HEAD~2..HEAD"
-  )
+  # Propose a coordinated split across all repositories
+  let proposalParams = %*{
+    "commitRange": "HEAD~2..HEAD"
+  }
   
-  echo fmt"Proposal confidence: {proposal.confidence:.2f}"
-  echo fmt"Total commit groups: {proposal.commitGroups.len}"
+  let response = await client.call("proposeMultiRepoSplit", proposalParams)
+  let proposal = response["result"]
   
-  for group in proposal.commitGroups:
-    echo fmt"\nGroup: {group.description}"
+  echo fmt"Proposal confidence: {proposal["confidence"].getFloat:.2f}"
+  echo fmt"Total commit groups: {proposal["commitGroups"].len}"
+  
+  for group in proposal["commitGroups"]:
+    echo fmt"\nGroup: {group["description"].getStr}"
     echo "  Affects repositories:"
-    for repo, commits in group.repositories:
+    for repo, commits in group["repositories"]:
       echo fmt"    {repo}: {commits.len} commits"
     
-    if group.dependencies.len > 0:
+    if group["dependencies"].len > 0:
       echo "  Dependencies:"
-      for dep in group.dependencies:
-        echo fmt"    {dep}"
+      for dep in group["dependencies"]:
+        echo fmt"    {dep.getStr}"
 
 # Example 4: Multi-repo workflow with dependency checking
 proc dependencyAwareWorkflow() {.async.} =
@@ -78,32 +90,43 @@ proc dependencyAwareWorkflow() {.async.} =
   let client = newMcpClient("http://localhost:8080/mcp")
   
   # First, analyze for dependencies
-  let analysis = await client.analyzeMultiRepoCommits(
-    commitRange = "HEAD~1..HEAD"
-  )
+  let analysisParams = %*{
+    "commitRange": "HEAD~1..HEAD"
+  }
   
-  if analysis.hasCrossDependencies:
+  let analysisResp = await client.call("analyzeMultiRepoCommits", analysisParams)
+  let analysis = analysisResp["result"]
+  
+  if analysis["hasCrossDependencies"].getBool:
     echo "Dependencies detected! Using coordinated split..."
     
     # Propose coordinated split
-    let proposal = await client.proposeMultiRepoSplit(
-      commitRange = "HEAD~1..HEAD"
-    )
+    let proposalParams = %*{
+      "commitRange": "HEAD~1..HEAD"
+    }
+    
+    let proposalResp = await client.call("proposeMultiRepoSplit", proposalParams)
+    let proposal = proposalResp["result"]
     
     # Check if all dependency constraints are satisfied
     var allSatisfied = true
-    for group in proposal.commitGroups:
-      if group.dependencies.len > 0:
-        echo fmt"\nGroup '{group.description}' has dependencies:"
-        for dep in group.dependencies:
-          echo fmt"  - {dep}"
+    for group in proposal["commitGroups"]:
+      if group["dependencies"].len > 0:
+        echo fmt"\nGroup '{group["description"].getStr}' has dependencies:"
+        for dep in group["dependencies"]:
+          echo fmt"  - {dep.getStr}"
     
-    if allSatisfied and proposal.confidence > 0.75:
+    if allSatisfied and proposal["confidence"].getFloat > 0.75:
       echo "\nExecuting coordinated split..."
-      let result = await client.executeMultiRepoSplit(proposal)
+      let execParams = %*{
+        "proposal": proposal
+      }
+      
+      let execResp = await client.call("executeMultiRepoSplit", execParams)
+      let result = execResp["result"]
       
       echo "\nCommits created:"
-      for repo, commits in result.commitsByRepo:
+      for repo, commits in result["commitsByRepo"]:
         echo fmt"  {repo}: {commits.len} commits"
   else:
     echo "No cross-dependencies found. Repositories can be split independently."
@@ -114,14 +137,17 @@ proc customRepoConfig() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Use custom repository configuration
-  let analysis = await client.analyzeMultiRepoCommits(
-    commitRange = "HEAD~1..HEAD",
-    configPath = "./custom-repos.json"
-  )
+  # Note: Custom config is typically set when starting the server
+  # This example shows analyzing with the current server configuration
+  let analysisParams = %*{
+    "commitRange": "HEAD~1..HEAD"
+  }
   
-  echo "Repositories from custom config:"
-  for repo in analysis.repositories.keys:
+  let response = await client.call("analyzeMultiRepoCommits", analysisParams)
+  let analysis = response["result"]
+  
+  echo "Repositories configured in server:"
+  for repo in analysis["repositories"].keys:
     echo fmt"  - {repo}"
 
 # Example 6: Monorepo with submodules
@@ -130,19 +156,22 @@ proc monorepoWorkflow() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Analyze a monorepo structure
-  let analysis = await client.analyzeMultiRepoCommits(
-    commitRange = "HEAD~1..HEAD",
-    repositories = @[
-      "monorepo/packages/frontend",
-      "monorepo/packages/backend",
-      "monorepo/packages/shared"
+  # Analyze specific paths in a monorepo structure
+  let analysisParams = %*{
+    "commitRange": "HEAD~1..HEAD",
+    "repositories": [
+      "packages/frontend",
+      "packages/backend",
+      "packages/shared"
     ]
-  )
+  }
+  
+  let response = await client.call("analyzeMultiRepoCommits", analysisParams)
+  let analysis = response["result"]
   
   # Group by package type
   var packageGroups = initTable[string, seq[string]]()
-  for repo in analysis.repositories.keys:
+  for repo in analysis["repositories"].keys:
     let packageType = repo.split("/")[^1]  # Get last part
     if not packageGroups.hasKey(packageType):
       packageGroups[packageType] = @[]
@@ -159,32 +188,35 @@ proc automatedMultiRepoSplit() {.async.} =
   let client = newMcpClient("http://localhost:8080/mcp")
   
   # Fully automated split with all features
-  let result = await client.automateMultiRepoSplit(
-    commitRange = "HEAD~3..HEAD"
-  )
+  let autoParams = %*{
+    "commitRange": "HEAD~3..HEAD"
+  }
   
-  if result.success:
+  let response = await client.call("automateMultiRepoSplit", autoParams)
+  let result = response["result"]
+  
+  if result["success"].getBool:
     echo "Automated split completed successfully!"
     
     # Show analysis summary
     echo "\nAnalysis summary:"
-    echo fmt"  Total files: {result.analysis.totalFiles}"
-    echo fmt"  Total changes: {result.analysis.totalChanges}"
-    echo fmt"  Has dependencies: {result.analysis.hasCrossDependencies}"
+    echo fmt"  Total files: {result["analysis"]["totalFiles"].getInt}"
+    echo fmt"  Total changes: {result["analysis"]["totalChanges"].getInt}"
+    echo fmt"  Has dependencies: {result["analysis"]["hasCrossDependencies"].getBool}"
     
     # Show proposal summary
     echo "\nProposal summary:"
-    echo fmt"  Confidence: {result.proposal.confidence:.2f}"
-    echo fmt"  Commit groups: {result.proposal.commitGroups.len}"
+    echo fmt"  Confidence: {result["proposal"]["confidence"].getFloat:.2f}"
+    echo fmt"  Commit groups: {result["proposal"]["commitGroups"].len}"
     
     # Show execution summary
     echo "\nExecution summary:"
-    echo fmt"  Total commits created: {result.execution.totalCommits}"
-    echo fmt"  Execution time: {result.execution.executionTime}"
+    echo fmt"  Total commits created: {result["execution"]["totalCommits"].getInt}"
+    echo fmt"  Execution time: {result["execution"]["executionTime"].getStr}"
     
     echo "\nCommits by repository:"
-    for repo, commits in result.execution.commitsByRepo:
-      echo fmt"  {repo}: {commits}"
+    for repo, commits in result["execution"]["commitsByRepo"]:
+      echo fmt"  {repo}: {commits.len} commits"
 
 # Example 8: Rollback on failure
 proc safeMultiRepoSplit() {.async.} =
@@ -197,14 +229,21 @@ proc safeMultiRepoSplit() {.async.} =
   # In real implementation, this would create jj operation savepoint
   
   try:
-    let proposal = await client.proposeMultiRepoSplit(
-      commitRange = "HEAD~1..HEAD"
-    )
+    let proposalParams = %*{
+      "commitRange": "HEAD~1..HEAD"
+    }
     
-    if proposal.confidence < 0.6:
+    let proposalResp = await client.call("proposeMultiRepoSplit", proposalParams)
+    let proposal = proposalResp["result"]
+    
+    if proposal["confidence"].getFloat < 0.6:
       raise newException(ValueError, "Confidence too low for safe execution")
     
-    let result = await client.executeMultiRepoSplit(proposal)
+    let execParams = %*{
+      "proposal": proposal
+    }
+    
+    let execResp = await client.call("executeMultiRepoSplit", execParams)
     echo "Split executed successfully"
     
   except Exception as e:
@@ -216,17 +255,24 @@ proc safeMultiRepoSplit() {.async.} =
 when isMainModule:
   echo "MCP-Jujutsu Multi-Repository Examples"
   echo "===================================="
+  echo "Note: Start the server in multi-repo mode first:"
+  echo "  nimble run -- --hub --port=8080"
+  echo "  or: docker-compose --profile multi up"
+  echo ""
   
-  # Note: These examples assume you're running in multi-repo mode
-  # Start server with: ./scripts/start-server.sh 8080 multi
-  
-  waitFor analyzeMultipleRepos()
-  waitFor analyzeSpecificRepos()
-  waitFor coordinatedSplit()
-  waitFor dependencyAwareWorkflow()
-  waitFor customRepoConfig()
-  waitFor monorepoWorkflow()
-  waitFor automatedMultiRepoSplit()
-  waitFor safeMultiRepoSplit()
+  try:
+    waitFor analyzeMultipleRepos()
+    waitFor analyzeSpecificRepos()
+    waitFor coordinatedSplit()
+    waitFor dependencyAwareWorkflow()
+    waitFor customRepoConfig()
+    waitFor monorepoWorkflow()
+    waitFor automatedMultiRepoSplit()
+    waitFor safeMultiRepoSplit()
+  except MpcError as e:
+    echo fmt"\nMCP Error: {e.msg}"
+    echo "Make sure the server is running in multi-repo mode."
+  except Exception as e:
+    echo fmt"\nError: {e.msg}"
   
   echo "\n\nAll multi-repo examples completed!"

@@ -2,7 +2,7 @@
 ##
 ## This module implements multi-repository tools for MCP.
 
-import std/[asyncdispatch, json, options, sets, strutils, tables, os]
+import std/[asyncdispatch, json, options, strutils, tables, os]
 import ../repository/manager as repo_manager
 import ../analyzer/cross_repo
 import ../../core/repository/jujutsu

@@ -1,0 +1,56 @@
+# Example docker-compose override file
+# Copy this to docker-compose.override.yml and customize as needed
+
+version: '3.8'
+
+services:
+  # Override settings for single repository mode
+  mcp-jujutsu-single:
+    environment:
+      # Custom environment variables
+      - MCP_JUJUTSU_LOG_LEVEL=debug
+      - MCP_JUJUTSU_VERBOSE=true
+      # AI integration (if needed)
+      - MCP_JUJUTSU_AI_ENDPOINT=https://api.openai.com/v1/chat/completions
+      - MCP_JUJUTSU_AI_API_KEY=${OPENAI_API_KEY}
+      - MCP_JUJUTSU_AI_MODEL=gpt-4
+    volumes:
+      # Mount custom configuration
+      - ./my-config.json:/app/config/config.json:ro
+      # Mount additional repositories
+      - ~/projects/my-repo:/app/repos/my-repo:rw
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Override settings for multi repository mode
+  mcp-jujutsu-multi:
+    environment:
+      # Custom repository configuration
+      - MCP_JUJUTSU_REPO_CONFIG_PATH=/app/config/my-repos.json
+    volumes:
+      # Mount custom repository configuration
+      - ./my-repos.json:/app/config/my-repos.json:ro
+      # Mount organization repositories
+      - ~/organization:/app/repos/multi:rw
+
+  # Development mode overrides
+  mcp-jujutsu-dev:
+    environment:
+      # Enable all debug output
+      - NIM_DEBUG=true
+      - MCP_JUJUTSU_LOG_LEVEL=debug
+      - MCP_JUJUTSU_VERBOSE=true
+    # Mount additional development tools
+    volumes:
+      - ./scripts:/app/scripts:rw
+      - ./nim.cfg:/app/nim.cfg:ro
+      - ./nimble.cfg:/app/nimble.cfg:ro
+    # Run tests on startup
+    command: ["bash", "-c", "nimble test && nimble run -- --http --host=0.0.0.0 --port=8082 --verbose"]

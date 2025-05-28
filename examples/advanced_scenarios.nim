@@ -1,12 +1,14 @@
 ## Advanced Usage Scenarios for MCP-Jujutsu
 ## This file demonstrates complex and advanced use cases
+## with sophisticated patterns and optimizations
 
 import asyncdispatch
 import json
 import strformat
 import times
 import sequtils
-import ../src/client/client
+import os
+import mcp_jujutsu/client/client
 
 # Example 1: Progressive refinement strategy
 proc progressiveRefinement() {.async.} =
@@ -21,13 +23,20 @@ proc progressiveRefinement() {.async.} =
   while true:
     echo fmt"\nIteration {iteration}: Analyzing {currentRange}"
     
-    let analysis = await client.analyzeCommitRange(currentRange)
+    let analysis = await client.analyzeCommitRange("/path/to/repo", currentRange)
     
     if analysis.fileCount <= 20:
       # Small enough to handle directly
       let result = await client.automateCommitDivision(
-        commitRange = currentRange,
-        strategy = "semantic"
+        "/path/to/repo",
+        currentRange,
+        "semantic",
+        "medium",
+        10,
+        0.7,
+        false,
+        true,
+        false
       )
       echo fmt"Created {result.commitIds.len} commits"
       break
@@ -43,46 +52,64 @@ proc intelligentStrategySelection() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
+  
   # Analyze commit characteristics
-  let analysis = await client.analyzeCommitRange("HEAD~1..HEAD")
+  let analysis = await client.analyzeCommitRange(repoPath, "HEAD~1..HEAD")
   
   # Determine best strategy based on analysis
   var strategy: string
   var commitSize: string
   
-  # Check file type distribution
-  let uniqueFileTypes = analysis.fileTypes.len
-  let dominantType = analysis.fileTypes.pairs.toSeq.maxBy(proc(x: auto): auto = x[1])
+  # Check file type distribution from analysis response
+  let fileTypes = analysis["analysis"]["fileTypes"]
+  let fileCount = analysis["analysis"]["fileCount"].getInt
+  let uniqueFileTypes = fileTypes.len
   
-  if uniqueFileTypes <= 2 and dominantType[1].float / analysis.fileCount.float > 0.8:
-    strategy = "filetype"
-    echo fmt"Detected dominant file type: {dominantType[0]} ({dominantType[1]} files)"
-  elif analysis.codePatterns.getOrDefault("newFunctions", 0) > 10:
-    strategy = "semantic"
-    echo "Detected many new functions, using semantic strategy"
+  if uniqueFileTypes <= 2:
+    # Find dominant file type
+    var maxCount = 0
+    var dominantType = ""
+    for ft, count in fileTypes:
+      if count.getInt > maxCount:
+        maxCount = count.getInt
+        dominantType = ft
+    
+    if maxCount.float / fileCount.float > 0.8:
+      strategy = "filetype"
+      echo fmt"Detected dominant file type: {dominantType} ({maxCount} files)"
+    else:
+      strategy = "semantic"
+      echo "Mixed file types, using semantic strategy"
   else:
     strategy = "directory"
-    echo "Using directory-based strategy"
+    echo "Many file types, using directory-based strategy"
   
   # Determine commit size preference
-  if analysis.fileCount > 50:
+  if fileCount > 50:
     commitSize = "many"
     echo "Large change set, preferring many small commits"
-  elif analysis.fileCount < 10:
+  elif fileCount < 10:
     commitSize = "few"
     echo "Small change set, preferring few larger commits"
   else:
-    commitSize = "balanced"
+    commitSize = "medium"
     echo "Medium change set, using balanced approach"
   
   # Execute with selected strategy
   let result = await client.automateCommitDivision(
-    commitRange = "HEAD~1..HEAD",
-    strategy = strategy,
-    commitSize = commitSize
+    repoPath,
+    "HEAD~1..HEAD",
+    strategy,
+    commitSize,
+    15,     # maxCommits
+    0.75,   # minConfidence
+    false,  # dryRun
+    true,   # validate
+    true    # autoFix
   )
   
-  echo fmt"\nStrategy '{strategy}' with '{commitSize}' size created {result.commitIds.len} commits"
+  echo fmt"\nStrategy '{strategy}' with '{commitSize}' size created {result["result"]["commitIds"].len} commits"
 
 # Example 3: Commit message quality enforcement
 proc enforceCommitQuality() {.async.} =
@@ -100,22 +127,30 @@ proc enforceCommitQuality() {.async.} =
       return (true, "")  # Lowercase is correct for conventional commits
     return (false, "Should start with lowercase")
   
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
+  
   # Propose division with validation
   let result = await client.automateCommitDivision(
-    commitRange = "HEAD~1..HEAD",
-    strategy = "semantic",
-    validate = true,
-    autoFix = true,
-    dryRun = true
+    repoPath,
+    "HEAD~1..HEAD",
+    "semantic",
+    "medium",
+    10,
+    0.7,
+    true,   # dryRun
+    true,   # validate
+    true    # autoFix
   )
   
   echo "Validation results:"
-  for validation in result.validation.results:
-    let customValidation = validateCommitMessage(validation.message)
+  let commits = result["result"]["proposal"]["proposedCommits"]
+  for commit in commits:
+    let msg = commit["message"].getStr
+    let customValidation = validateCommitMessage(msg)
     if customValidation.valid:
-      echo fmt"  ✓ {validation.message}"
+      echo fmt"  ✓ {msg}"
     else:
-      echo fmt"  ✗ {validation.message} - {customValidation.reason}"
+      echo fmt"  ✗ {msg} - {customValidation.reason}"
 
 # Example 4: Handling merge commits
 proc handleMergeCommits() {.async.} =
@@ -123,33 +158,46 @@ proc handleMergeCommits() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
-  # Check if HEAD is a merge commit
-  # In real implementation, would use jj to check
-  let analysis = await client.analyzeCommitRange("HEAD~1..HEAD")
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
   
-  if analysis.fileCount > 100:  # Likely a merge
+  # Check if HEAD is a merge commit
+  let analysis = await client.analyzeCommitRange(repoPath, "HEAD~1..HEAD")
+  
+  let fileCount = analysis["analysis"]["fileCount"].getInt
+  
+  if fileCount > 100:  # Likely a merge
     echo "Detected potential merge commit"
     
     # For merges, analyze each parent separately
     echo "\nAnalyzing first parent..."
-    let parent1 = await client.analyzeCommitRange("HEAD^1~1..HEAD^1")
+    let parent1 = await client.analyzeCommitRange(repoPath, "HEAD^1~1..HEAD^1")
     
     echo "\nAnalyzing second parent..."
-    let parent2 = await client.analyzeCommitRange("HEAD^2~1..HEAD^2")
+    let parent2 = await client.analyzeCommitRange(repoPath, "HEAD^2~1..HEAD^2")
     
-    echo fmt"\nFirst parent: {parent1.fileCount} files"
-    echo fmt"Second parent: {parent2.fileCount} files"
+    let parent1Files = parent1["analysis"]["fileCount"].getInt
+    let parent2Files = parent2["analysis"]["fileCount"].getInt
+    
+    echo fmt"\nFirst parent: {parent1Files} files"
+    echo fmt"Second parent: {parent2Files} files"
     
     # Handle the larger parent
-    let targetRange = if parent1.fileCount > parent2.fileCount:
+    let targetRange = if parent1Files > parent2Files:
       "HEAD^1~1..HEAD^1"
     else:
       "HEAD^2~1..HEAD^2"
     
     echo fmt"\nProcessing larger parent: {targetRange}"
     let result = await client.automateCommitDivision(
-      commitRange = targetRange,
-      strategy = "semantic"
+      repoPath,
+      targetRange,
+      "semantic",
+      "medium",
+      10,
+      0.7,
+      false,
+      true,
+      false
     )
 
 # Example 5: Time-based commit grouping
@@ -158,8 +206,10 @@ proc timeBasedGrouping() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
+  
   # Analyze multiple commits
-  let analysis = await client.analyzeCommitRange("HEAD~7..HEAD")
+  let analysis = await client.analyzeCommitRange(repoPath, "HEAD~7..HEAD")
   
   # Group commits by day (simulated)
   echo "Grouping commits by time period..."
@@ -182,9 +232,11 @@ proc timeBasedGrouping() {.async.} =
       echo fmt"    -> Too many commits for {day}, will split semantically"
       let dayRange = fmt"{commits[^1]}..{commits[0]}"
       let _ = await client.proposeCommitDivision(
-        commitRange = dayRange,
-        strategy = "semantic",
-        maxCommits = 3
+        repoPath,
+        dayRange,
+        "semantic",
+        "medium",
+        3
       )
 
 # Example 6: Cross-branch analysis
@@ -196,27 +248,31 @@ proc crossBranchAnalysis() {.async.} =
   # Compare feature branch with main
   echo "Analyzing differences between branches..."
   
-  let featureAnalysis = await client.analyzeCommitRange("main..feature-branch")
-  let mainAnalysis = await client.analyzeCommitRange("feature-branch..main")
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
+  
+  let featureAnalysis = await client.analyzeCommitRange(repoPath, "main..feature-branch")
+  let mainAnalysis = await client.analyzeCommitRange(repoPath, "feature-branch..main")
   
   echo fmt"\nFeature branch ahead by:"
-  echo fmt"  Files: {featureAnalysis.fileCount}"
-  echo fmt"  Additions: {featureAnalysis.totalAdditions}"
-  echo fmt"  Deletions: {featureAnalysis.totalDeletions}"
+  echo fmt"  Files: {featureAnalysis["analysis"]["fileCount"].getInt}"
+  echo fmt"  Additions: {featureAnalysis["analysis"]["totalAdditions"].getInt}"
+  echo fmt"  Deletions: {featureAnalysis["analysis"]["totalDeletions"].getInt}"
   
   echo fmt"\nMain branch ahead by:"
-  echo fmt"  Files: {mainAnalysis.fileCount}"
-  echo fmt"  Additions: {mainAnalysis.totalAdditions}"
-  echo fmt"  Deletions: {mainAnalysis.totalDeletions}"
+  echo fmt"  Files: {mainAnalysis["analysis"]["fileCount"].getInt}"
+  echo fmt"  Additions: {mainAnalysis["analysis"]["totalAdditions"].getInt}"
+  echo fmt"  Deletions: {mainAnalysis["analysis"]["totalDeletions"].getInt}"
   
-  if featureAnalysis.fileCount > 20:
+  if featureAnalysis["analysis"]["fileCount"].getInt > 20:
     echo "\nFeature branch has many changes, proposing split before merge..."
     let proposal = await client.proposeCommitDivision(
-      commitRange = "main..feature-branch",
-      strategy = "semantic",
-      commitSize = "balanced"
+      repoPath,
+      "main..feature-branch",
+      "semantic",
+      "medium",
+      10
     )
-    echo fmt"Proposed {proposal.proposedCommits.len} commits for cleaner history"
+    echo fmt"Proposed {proposal["proposal"]["proposedCommits"].len} commits for cleaner history"
 
 # Example 7: Incremental processing
 proc incrementalProcessing() {.async.} =
@@ -233,18 +289,27 @@ proc incrementalProcessing() {.async.} =
     let range = fmt"HEAD~{i}..HEAD~{i-1}"
     echo fmt"\nProcessing commit {totalCommits - i + 1}/{totalCommits}: {range}"
     
-    let analysis = await client.analyzeCommitRange(range)
-    processedFiles += analysis.fileCount
+    let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
+    let analysis = await client.analyzeCommitRange(repoPath, range)
+    let fileCount = analysis["analysis"]["fileCount"].getInt
+    processedFiles += fileCount
     
-    if analysis.fileCount > 10:
+    if fileCount > 10:
       # Split this commit
       let result = await client.automateCommitDivision(
-        commitRange = range,
-        strategy = "semantic",
-        maxCommits = 3
+        repoPath,
+        range,
+        "semantic",
+        "medium",
+        3,
+        0.7,
+        false,
+        true,
+        false
       )
-      createdCommits += result.commitIds.len
-      echo fmt"  Split into {result.commitIds.len} commits"
+      let commitCount = result["result"]["commitIds"].len
+      createdCommits += commitCount
+      echo fmt"  Split into {commitCount} commits"
     else:
       # Keep as is
       createdCommits += 1
@@ -262,62 +327,86 @@ proc customScoringWorkflow() {.async.} =
   
   let client = newMcpClient("http://localhost:8080/mcp")
   
+  let repoPath = if paramCount() > 0: paramStr(1) else: getCurrentDir()
+  
   # Get proposal
   let proposal = await client.proposeCommitDivision(
-    commitRange = "HEAD~2..HEAD",
-    strategy = "semantic",
-    maxCommits = 10
+    repoPath,
+    "HEAD~2..HEAD",
+    "semantic",
+    "medium",
+    10
   )
   
   # Custom scoring function
-  proc scoreCommit(commit: ProposedCommit): float =
-    result = commit.confidence
+  proc scoreCommit(commit: JsonNode): float =
+    result = commit["confidence"].getFloat
+    
+    # Extract type and scope from message
+    let msg = commit["message"].getStr
+    let parts = msg.split("(")
+    let commitType = if parts.len > 0: parts[0] else: ""
+    let scope = if parts.len > 1: parts[1].split(")")[0] else: ""
     
     # Bonus for certain types
-    if commit.type == "feat":
+    if commitType == "feat":
       result += 0.1
-    elif commit.type == "fix":
+    elif commitType == "fix":
       result += 0.15
     
     # Penalty for too many files
-    if commit.files.len > 10:
+    let fileCount = commit["changes"].len
+    if fileCount > 10:
       result -= 0.2
-    elif commit.files.len == 1:
+    elif fileCount == 1:
       result -= 0.1  # Too granular
     
     # Bonus for good scope
-    if commit.scope in ["api", "core", "auth"]:
+    if scope in ["api", "core", "auth"]:
       result += 0.1
   
   # Re-score and filter commits
+  let commits = proposal["proposal"]["proposedCommits"]
   echo "Original proposals:"
-  for commit in proposal.proposedCommits:
-    echo fmt"  {commit.type}({commit.scope}): {commit.description} - confidence: {commit.confidence:.2f}"
+  for commit in commits:
+    let msg = commit["message"].getStr
+    let conf = commit["confidence"].getFloat
+    echo fmt"  {msg} - confidence: {conf:.2f}"
   
   echo "\nAfter custom scoring:"
-  var filtered = newSeq[ProposedCommit]()
-  for commit in proposal.proposedCommits:
+  var filtered = 0
+  for commit in commits:
     let score = scoreCommit(commit)
+    let msg = commit["message"].getStr
     if score >= 0.7:
-      filtered.add(commit)
-      echo fmt"  ✓ {commit.type}({commit.scope}): {commit.description} - score: {score:.2f}"
+      filtered += 1
+      echo fmt"  ✓ {msg} - score: {score:.2f}"
     else:
-      echo fmt"  ✗ {commit.type}({commit.scope}): {commit.description} - score: {score:.2f} (filtered)"
+      echo fmt"  ✗ {msg} - score: {score:.2f} (filtered)"
   
-  echo fmt"\nKept {filtered.len}/{proposal.proposedCommits.len} commits after filtering"
+  echo fmt"\nKept {filtered}/{commits.len} commits after filtering"
 
 # Main execution
 when isMainModule:
   echo "MCP-Jujutsu Advanced Scenarios"
   echo "=============================="
+  echo "Note: Replace '/path/to/repo' with your repository path"
+  echo "or pass it as a command line argument."
+  echo ""
   
-  waitFor progressiveRefinement()
-  waitFor intelligentStrategySelection()
-  waitFor enforceCommitQuality()
-  waitFor handleMergeCommits()
-  waitFor timeBasedGrouping()
-  waitFor crossBranchAnalysis()
-  waitFor incrementalProcessing()
-  waitFor customScoringWorkflow()
-  
-  echo "\n\nAll advanced examples completed!"
+  try:
+    waitFor progressiveRefinement()
+    waitFor intelligentStrategySelection()
+    waitFor enforceCommitQuality()
+    waitFor handleMergeCommits()
+    waitFor timeBasedGrouping()
+    waitFor crossBranchAnalysis()
+    waitFor incrementalProcessing()
+    waitFor customScoringWorkflow()
+    
+    echo "\n\nAll advanced examples completed!"
+  except MpcError as e:
+    echo fmt"\nMCP Error: {e.msg}"
+    echo "Make sure the MCP server is running."
+  except Exception as e:
+    echo fmt"\nError: {e.msg}"

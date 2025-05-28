@@ -3,7 +3,8 @@
 ## This module defines the common configuration for both single-repository
 ## and multi-repository modes.
 
-import std/[os, parseopt, strutils, tables]
+import std/[os, parseopt, strutils, json]
+import parsetoml
 
 type
   ServerMode* = enum
@@ -25,6 +26,7 @@ type
     httpHost*: string           ## HTTP host to bind to (e.g., "127.0.0.1")
     httpPort*: int              ## HTTP port to listen on
     useStdio*: bool             ## Enable stdio transport for CLI integration
+    useSse*: bool               ## Enable SSE (Server-Sent Events) mode for HTTP transport
     
     # Repository settings
     repoPath*: string           ## Path to repository (single-repo mode)
@@ -51,11 +53,12 @@ proc newDefaultConfig*(): Config =
     httpHost: "127.0.0.1",
     httpPort: 8080,
     useStdio: false,
+    useSse: false,
     
     # Repository settings
     repoPath: getCurrentDir(),
     reposDir: getCurrentDir(),
-    repoConfigPath: getCurrentDir() / "repos.json",
+    repoConfigPath: getCurrentDir() / "repos.toml",
     
     # AI Integration
     aiEndpoint: "https://api.openai.com/v1/chat/completions",
@@ -63,46 +66,135 @@ proc newDefaultConfig*(): Config =
     aiModel: "gpt-4"
   )
 
+proc loadConfigFromToml(path: string): Config =
+  ## Loads configuration from a TOML file
+  result = newDefaultConfig()
+  
+  let tomlData = parsetoml.parseFile(path)
+  
+  # General settings
+  if tomlData.hasKey("general"):
+    let general = tomlData["general"]
+    if general.hasKey("mode"):
+      let mode = general["mode"].getStr()
+      if mode.toLowerAscii() == "multi" or mode.toLowerAscii() == "multirepo":
+        result.serverMode = MultiRepo
+      else:
+        result.serverMode = SingleRepo
+    if general.hasKey("server_name"):
+      result.serverName = general["server_name"].getStr()
+    if general.hasKey("server_port"):
+      result.serverPort = general["server_port"].getInt()
+    if general.hasKey("log_level"):
+      result.logLevel = general["log_level"].getStr()
+    if general.hasKey("verbose"):
+      result.verbose = general["verbose"].getBool()
+  
+  # Transport settings
+  if tomlData.hasKey("transport"):
+    let transport = tomlData["transport"]
+    if transport.hasKey("http"):
+      result.useHttp = transport["http"].getBool()
+    if transport.hasKey("http_host"):
+      result.httpHost = transport["http_host"].getStr()
+    if transport.hasKey("http_port"):
+      result.httpPort = transport["http_port"].getInt()
+    if transport.hasKey("stdio"):
+      result.useStdio = transport["stdio"].getBool()
+  
+  # Repository settings
+  if tomlData.hasKey("repository"):
+    let repo = tomlData["repository"]
+    if repo.hasKey("path"):
+      result.repoPath = repo["path"].getStr()
+    if repo.hasKey("repos_dir"):
+      result.reposDir = repo["repos_dir"].getStr()
+    if repo.hasKey("config_path"):
+      result.repoConfigPath = repo["config_path"].getStr()
+  
+  # AI settings
+  if tomlData.hasKey("ai"):
+    let ai = tomlData["ai"]
+    if ai.hasKey("endpoint"):
+      result.aiEndpoint = ai["endpoint"].getStr()
+    if ai.hasKey("api_key"):
+      result.aiApiKey = ai["api_key"].getStr()
+    if ai.hasKey("model"):
+      result.aiModel = ai["model"].getStr()
+
+proc loadConfigFromJson(path: string): Config =
+  ## Loads configuration from a JSON file
+  result = newDefaultConfig()
+  
+  let jsonData = json.parseFile(path)
+  
+  # General settings
+  if jsonData.hasKey("mode"):
+    let mode = jsonData["mode"].getStr()
+    if mode.toLowerAscii() == "multi" or mode.toLowerAscii() == "multirepo":
+      result.serverMode = MultiRepo
+    else:
+      result.serverMode = SingleRepo
+  if jsonData.hasKey("serverName"):
+    result.serverName = jsonData["serverName"].getStr()
+  if jsonData.hasKey("serverPort"):
+    result.serverPort = jsonData["serverPort"].getInt()
+  if jsonData.hasKey("logLevel"):
+    result.logLevel = jsonData["logLevel"].getStr()
+  if jsonData.hasKey("verbose"):
+    result.verbose = jsonData["verbose"].getBool()
+  
+  # Transport settings
+  if jsonData.hasKey("useHttp"):
+    result.useHttp = jsonData["useHttp"].getBool()
+  if jsonData.hasKey("httpHost"):
+    result.httpHost = jsonData["httpHost"].getStr()
+  if jsonData.hasKey("httpPort"):
+    result.httpPort = jsonData["httpPort"].getInt()
+  if jsonData.hasKey("useStdio"):
+    result.useStdio = jsonData["useStdio"].getBool()
+  
+  # Repository settings
+  if jsonData.hasKey("repoPath"):
+    result.repoPath = jsonData["repoPath"].getStr()
+  if jsonData.hasKey("reposDir"):
+    result.reposDir = jsonData["reposDir"].getStr()
+  if jsonData.hasKey("repoConfigPath"):
+    result.repoConfigPath = jsonData["repoConfigPath"].getStr()
+  
+  # AI settings
+  if jsonData.hasKey("aiEndpoint"):
+    result.aiEndpoint = jsonData["aiEndpoint"].getStr()
+  if jsonData.hasKey("aiApiKey"):
+    result.aiApiKey = jsonData["aiApiKey"].getStr()
+  if jsonData.hasKey("aiModel"):
+    result.aiModel = jsonData["aiModel"].getStr()
+
 proc loadConfigFile*(path: string): Config =
-  ## Loads configuration from a file
+  ## Loads configuration from a file (supports both TOML and JSON)
   result = newDefaultConfig()
   
   if not fileExists(path):
     return
   
-  # Simple config file parsing
-  for line in lines(path):
-    let trimmedLine = line.strip()
-    if trimmedLine.len == 0 or trimmedLine.startsWith("#"):
-      continue
-    
-    let parts = trimmedLine.split('=', 1)
-    if parts.len != 2:
-      continue
-    
-    let key = parts[0].strip().toLowerAscii()
-    let value = parts[1].strip()
-    
-    case key
-    of "mode":
-      if value.toLowerAscii() == "multi" or value.toLowerAscii() == "multirepo":
-        result.serverMode = MultiRepo
-      else:
-        result.serverMode = SingleRepo
-    of "servername": result.serverName = value
-    of "serverport": result.serverPort = parseInt(value)
-    of "loglevel": result.logLevel = value
-    of "verbose": result.verbose = parseBool(value)
-    of "http": result.useHttp = parseBool(value)
-    of "httphost": result.httpHost = value
-    of "httpport": result.httpPort = parseInt(value)
-    of "stdio": result.useStdio = parseBool(value)
-    of "repopath": result.repoPath = value
-    of "reposdir": result.reposDir = value
-    of "repoconfigpath": result.repoConfigPath = value
-    of "aiendpoint": result.aiEndpoint = value
-    of "aiapikey": result.aiApiKey = value
-    of "aimodel": result.aiModel = value
+  # Determine file type by extension
+  let ext = path.splitFile().ext.toLowerAscii()
+  
+  try:
+    case ext
+    of ".toml":
+      result = loadConfigFromToml(path)
+    of ".json":
+      result = loadConfigFromJson(path)
+    else:
+      # Try TOML first as default, then JSON if that fails
+      try:
+        result = loadConfigFromToml(path)
+      except CatchableError:
+        result = loadConfigFromJson(path)
+  except CatchableError as e:
+    echo "Warning: Failed to load config file: ", e.msg
+    result = newDefaultConfig()
 
 proc parseCommandLine*(): Config =
   ## Parses command-line arguments
@@ -111,8 +203,13 @@ proc parseCommandLine*(): Config =
   # Check for config file in standard locations
   let homeDir = getHomeDir()
   let configLocations = [
+    getCurrentDir() / "mcp-jujutsu.toml",
+    getCurrentDir() / ".mcp-jujutsu.toml",
+    getCurrentDir() / "config.toml",
     getCurrentDir() / ".mcp-jujutsu-config",
+    homeDir / ".config/mcp-jujutsu/config.toml",
     homeDir / ".config/mcp-jujutsu/config",
+    homeDir / ".mcp-jujutsu.toml",
     homeDir / ".mcp-jujutsu-config"
   ]
   
@@ -139,6 +236,7 @@ proc parseCommandLine*(): Config =
         echo "  --http                      Enable HTTP transport (default: true)"
         echo "  --host=HOST                 HTTP host to listen on (default: 127.0.0.1)"
         echo "  --stdio                     Enable stdio transport (default: false)"
+        echo "  --sse                       Enable SSE mode for HTTP transport (default: false)"
         echo "  --repo-path=PATH            Path to repository (for single mode)"
         echo "  --repos-dir=PATH            Directory with repositories (for multi mode)"
         echo "  --repo-config=PATH          Path to repository config (for multi mode)"
@@ -162,6 +260,8 @@ proc parseCommandLine*(): Config =
         result.httpHost = p.val
       of "stdio":
         result.useStdio = if p.val == "": true else: parseBool(p.val)
+      of "sse":
+        result.useSse = if p.val == "": true else: parseBool(p.val)
       of "repo-path":
         result.repoPath = p.val
       of "repos-dir":

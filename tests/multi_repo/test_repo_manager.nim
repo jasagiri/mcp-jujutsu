@@ -2,7 +2,7 @@
 ##
 ## This module tests the multi-repository manager functionality.
 
-import unittest, asyncdispatch, json, os, options
+import unittest, asyncdispatch, json, os, options, strutils
 import ../../src/multi_repo/repository/manager
 import ../../src/core/config/config
 
@@ -151,3 +151,83 @@ suite "Repository Manager Tests":
     # Validate all repositories - we'll skip this test as the Table interface
     # in this version of Nim is different and requires more extensive changes
     skip()
+  
+  test "TOML Configuration Loading":
+    # Test loading repository configuration from TOML
+    let tomlContent = """
+[[repositories]]
+name = "core-lib"
+path = "./core-lib"
+dependencies = []
+
+[[repositories]]
+name = "api-service"
+path = "./api-service"
+dependencies = ["core-lib"]
+
+[[repositories]]
+name = "frontend"
+path = "./frontend"
+dependencies = ["api-service"]
+"""
+    
+    # Create temporary file for testing
+    let tempConfigPath = getTempDir() / "test_repos.toml"
+    writeFile(tempConfigPath, tomlContent)
+    
+    # Load the configuration
+    var manager = waitFor loadRepositoryConfig(tempConfigPath)
+    
+    # Check repositories were loaded correctly
+    let repos = manager.listRepositories()
+    check(repos.len == 3)
+    check("core-lib" in repos)
+    check("api-service" in repos)
+    check("frontend" in repos)
+    
+    # Check dependencies
+    let apiRepoOpt = manager.getRepository("api-service")
+    check(apiRepoOpt.isSome)
+    let apiRepo = apiRepoOpt.get
+    check(apiRepo.dependencies == @["core-lib"])
+    
+    let frontendRepoOpt = manager.getRepository("frontend")
+    check(frontendRepoOpt.isSome)
+    let frontendRepo = frontendRepoOpt.get
+    check(frontendRepo.dependencies == @["api-service"])
+    
+    # Clean up
+    removeFile(tempConfigPath)
+  
+  test "TOML Configuration Saving":
+    # Test saving repository configuration as TOML
+    var manager = newRepositoryManager("/test/repos")
+    manager.addRepository("repo1", "/test/repos/repo1", @[])
+    manager.addRepository("repo2", "/test/repos/repo2", @["repo1"])
+    
+    # Create temporary file for testing
+    let tempConfigPath = getTempDir() / "test_save.toml"
+    
+    # Save configuration
+    let success = waitFor manager.saveConfig(tempConfigPath)
+    check(success)
+    
+    # Check file exists
+    check(fileExists(tempConfigPath))
+    
+    # Read the file and verify it's valid TOML
+    let savedContent = readFile(tempConfigPath)
+    check(savedContent.contains("[[repositories]]"))
+    check(savedContent.contains("name = \"repo1\""))
+    check(savedContent.contains("name = \"repo2\""))
+    check(savedContent.contains("dependencies = [\"repo1\"]"))
+    
+    # Load configuration back and verify content
+    let loadedManager = waitFor loadRepositoryConfig(tempConfigPath)
+    let repos = loadedManager.listRepositories()
+    check(repos.len == 2)
+    check("repo1" in repos)
+    check("repo2" in repos)
+    
+    # Clean up
+    removeFile(tempConfigPath)
