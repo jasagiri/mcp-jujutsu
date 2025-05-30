@@ -173,11 +173,38 @@ proc clearVersionCache*() =
 proc buildInitCommand*(commands: JujutsuCommands): string =
   commands.initCommand
 
+proc quoteShellArg*(arg: string): string {.gcsafe.} =
+  ## Properly quote an argument for shell execution
+  ## This handles special characters that could cause issues
+  if arg.len == 0:
+    return "''"
+  
+  # Check if quoting is needed
+  var needsQuoting = false
+  for c in arg:
+    if c in {' ', '\t', '\n', '\r', '\\', '"', '\'', '$', '`', '!', 
+             '&', '|', ';', '<', '>', '(', ')', '[', ']', '{', '}', 
+             '*', '?', '~', '#'}:
+      needsQuoting = true
+      break
+  
+  if not needsQuoting:
+    return arg
+  
+  # Use single quotes and escape any single quotes in the string
+  result = "'"
+  for c in arg:
+    if c == '\'':
+      result.add("'\\''")
+    else:
+      result.add(c)
+  result.add("'")
+
 proc buildAddCommand*(commands: JujutsuCommands, files: seq[string] = @[]): string =
   if commands.addCommand == "":
     return ""  # Auto-tracking, no add needed
   else:
-    return commands.addCommand & " " & files.join(" ")
+    return commands.addCommand & " " & files.mapIt(quoteShellArg(it)).join(" ")
 
 proc buildParentRevset*(commands: JujutsuCommands, generations: int = 1): string =
   ## Build parent revset (e.g., "@-", "@~", "@~2")
@@ -199,7 +226,9 @@ proc buildRangeRevset*(commands: JujutsuCommands, fromRev: string = "", toRev: s
 
 proc buildLogCommand*(commands: JujutsuCommands, revset: string, templateStr: string): string =
   ## Build log command with appropriate template syntax
+  let quotedRevset = quoteShellArg(revset)
+  let quotedTemplate = quoteShellArg(templateStr)
   if commands.logTemplate == "-T":
-    return "jj log -r " & revset & " --no-graph -T " & templateStr
+    return "jj log -r " & quotedRevset & " --no-graph -T " & quotedTemplate
   else:
-    return "jj log -r " & revset & " --no-graph --template " & templateStr
+    return "jj log -r " & quotedRevset & " --no-graph --template " & quotedTemplate

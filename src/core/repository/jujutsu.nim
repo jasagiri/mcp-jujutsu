@@ -5,6 +5,7 @@
 import std/[asyncdispatch, json, options, os, osproc, strutils, times, sequtils]
 import ../logging/logger
 import jujutsu_version
+export jujutsu_version.quoteShellArg
 
 type
   JujutsuRepo* = ref object
@@ -88,11 +89,11 @@ proc getDiffForCommitRange*(repo: JujutsuRepo, commitRange: string): Future[Diff
   let cmd = if ".." in commitRange:
     let parts = commitRange.split("..")
     if parts.len == 2:
-      commands.diffCommand & " --from '" & parts[0] & "' --to '" & parts[1] & "'"
+      commands.diffCommand & " --from " & quoteShellArg(parts[0]) & " --to " & quoteShellArg(parts[1])
     else:
-      commands.diffCommand & " -r '" & commitRange & "'"
+      commands.diffCommand & " -r " & quoteShellArg(commitRange)
   else:
-    commands.diffCommand & " -r '" & commitRange & "'"
+    commands.diffCommand & " -r " & quoteShellArg(commitRange)
   
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
@@ -208,7 +209,7 @@ proc createCommit*(repo: JujutsuRepo, message: string, changes: seq[tuple[path: 
   let currentId = currentIdOutput.strip()
   
   # Describe the current change with the message
-  let descCmd = "jj describe -m \"" & message.replace("\"", "\\\"") & "\""
+  let descCmd = "jj describe -m " & quoteShellArg(message)
   let (descOutput, exitCode) = await execCommand(descCmd, repo.path)
   
   if exitCode != 0:
@@ -219,7 +220,7 @@ proc createCommit*(repo: JujutsuRepo, message: string, changes: seq[tuple[path: 
 
 proc getCommitInfo*(repo: JujutsuRepo, commitId: string): Future[CommitInfo] {.async, gcsafe.} =
   ## Gets information about a specific commit
-  let cmd = "jj show -r " & commitId
+  let cmd = "jj show -r " & quoteShellArg(commitId)
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
   if exitCode != 0:
@@ -281,7 +282,7 @@ proc listBranches*(repo: JujutsuRepo): Future[seq[string]] {.async, gcsafe.} =
 
 proc createBranch*(repo: JujutsuRepo, name: string, fromCommit: string = "@"): Future[string] {.async, gcsafe.} =
   ## Creates a new branch
-  let cmd = "jj branch create " & name & " -r " & fromCommit
+  let cmd = "jj branch create " & quoteShellArg(name) & " -r " & quoteShellArg(fromCommit)
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
   if exitCode != 0:
@@ -291,7 +292,7 @@ proc createBranch*(repo: JujutsuRepo, name: string, fromCommit: string = "@"): F
 
 proc switchBranch*(repo: JujutsuRepo, name: string): Future[void] {.async, gcsafe.} =
   ## Switches to a branch
-  let cmd = "jj new -r " & name
+  let cmd = "jj new -r " & quoteShellArg(name)
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
   if exitCode != 0:
@@ -299,7 +300,7 @@ proc switchBranch*(repo: JujutsuRepo, name: string): Future[void] {.async, gcsaf
 
 proc getCommitHistory*(repo: JujutsuRepo, limit: int = 10, branch: string = "@"): Future[seq[CommitInfo]] {.async, gcsafe.} =
   ## Gets the commit history
-  let cmd = "jj log --no-graph -r " & branch & " -n " & $limit
+  let cmd = "jj log --no-graph -r " & quoteShellArg(branch) & " -n " & $limit
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
   if exitCode != 0:
@@ -347,7 +348,7 @@ proc compareCommits*(repo: JujutsuRepo, commit1: string, commit2: string): Futur
 
 proc getCommitFiles*(repo: JujutsuRepo, commitId: string): Future[seq[string]] {.async, gcsafe.} =
   ## Gets the list of files modified in a commit
-  let cmd = "jj files -r " & commitId
+  let cmd = "jj files -r " & quoteShellArg(commitId)
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
   if exitCode != 0:

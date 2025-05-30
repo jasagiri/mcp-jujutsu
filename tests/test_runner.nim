@@ -27,6 +27,7 @@ import core/test_mcp_server
 import core/test_mcp_server_extended
 # import core/test_stdio_transport  # Temporarily disabled - uses private fields
 import core/test_stdio_transport_basic
+import core/test_special_chars
 
 # Single repo tests
 import single_repo/test_config as single_config

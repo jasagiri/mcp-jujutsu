@@ -98,8 +98,12 @@ suite "Jujutsu Version Detection Tests":
     
     check "-T" in log28
     check "--template" in log27
-    check "commit_id.short()" in log28
-    check "commit_id.short()" in log27
+    check "'commit_id.short()'" in log28
+    check "'commit_id.short()'" in log27
+    
+    # Test that the template is properly quoted
+    check log28 == "jj log -r @ --no-graph -T 'commit_id.short()'"
+    check log27 == "jj log -r @ --no-graph --template 'commit_id.short()'"
   
   test "Version caching":
     # Clear cache first
