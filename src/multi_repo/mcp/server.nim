@@ -26,8 +26,9 @@ proc newMcpServer*(config: Config): Future[MultiRepoServer] {.async.} =
   # Initialize repository manager
   try:
     result.repoManager = await loadRepositoryConfig(config.repoConfigPath)
-  except:
-    # Default empty repository manager
+  except CatchableError as e:
+    # Default empty repository manager on config loading error
+    echo "Warning: Failed to load repository config: ", e.msg
     result.repoManager = newRepositoryManager(config.reposDir)
 
 # Delegate common methods to the base server

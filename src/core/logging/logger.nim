@@ -353,7 +353,7 @@ proc configureFromFile*(logger: Logger, configPath: string): bool =
       logger.init()
     
     return true
-  except Exception as e:
+  except CatchableError as e:
     echo "Error configuring logger from file: ", e.msg
     return false
 
@@ -392,6 +392,6 @@ proc configureFromConfig*(logger: Logger, config: Config): bool =
       logger.init()
     
     return true
-  except Exception as e:
+  except CatchableError as e:
     echo "Error configuring logger from config: ", e.msg
     return false

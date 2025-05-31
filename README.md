@@ -11,6 +11,7 @@ All documentation is located in the `docs/` directory:
 - [INSTALLATION](docs/INSTALLATION.md) - Installation instructions
 - [CONFIGURATION](docs/CONFIGURATION.md) - Configuration guide
 - [API_REFERENCE](docs/API_REFERENCE.md) - API documentation
+- [DIFF_FORMATS](docs/DIFF_FORMATS.md) - Diff format options and templates
 
 ## Quick Start
 

@@ -2,7 +2,7 @@
 ##
 ## This module handles version-specific command variations across different Jujutsu versions
 
-import std/[strutils, sequtils, re, tables, osproc, options, asyncdispatch]
+import std/[strutils, sequtils, osproc, options, asyncdispatch]
 import ../logging/logger
 
 type
@@ -118,7 +118,7 @@ proc getJujutsuVersion*(): Future[JujutsuVersion] {.async, gcsafe.} =
       info("Detected Jujutsu version", ctx)
     else:
       raise newException(IOError, "Failed to get Jujutsu version: " & output)
-  except Exception as e:
+  except CatchableError as e:
     let ctx = newLogContext("jujutsu", "version")
     error("Failed to detect Jujutsu version: " & e.msg, ctx)
     # Return default version for fallback

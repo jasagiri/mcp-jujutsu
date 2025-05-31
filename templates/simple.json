@@ -1,0 +1,10 @@
+{
+  "name": "simple",
+  "description": "Simple text-based diff format",
+  "fileHeader": "\n=== File: $path ===",
+  "hunkHeader": "\n--- Changes at lines $oldStart-$oldCount -> $newStart-$newCount ---",
+  "addLine": " + $content",
+  "deleteLine": " - $content",
+  "contextLine": "   $content",
+  "footer": ""
+}

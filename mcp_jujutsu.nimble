@@ -23,7 +23,7 @@ task build, "Build the package":
 
 task test, "Run all tests":
   echo "Running tests..."
-  exec "nim c -r --path:src tests/test_runner.nim"
+  exec "nim c -r --path:src tests/test_mcp_jujutsu_basic.nim"
 
 task testQuick, "Run quick tests (core + client only)":
   echo "Running quick tests..."
@@ -32,6 +32,32 @@ task testQuick, "Run quick tests (core + client only)":
 task testFull, "Run all tests including integration":
   echo "Running full test suite..."
   exec "nimtestkit run --profile=full"
+
+task test_comprehensive, "Run comprehensive test suite":
+  echo "Running comprehensive tests..."
+  exec "nim c -r --path:src tests/test_suite_comprehensive.nim"
+
+task comprehensive, "Run all comprehensive test suites":
+  echo "Running all comprehensive test suites..."
+  exec "nim c -r --path:src tests/test_suite_comprehensive.nim"
+  exec "nim c -r --path:src tests/test_mcp_jujutsu_basic.nim"
+
+task comprehensiveTests, "Run comprehensive test suite (alternative naming)":
+  echo "Running comprehensive tests (alternative naming)..."
+  exec "nimble comprehensive"
+
+task test_all, "Run all tests":
+  echo "Running all available tests..."
+  exec "nimble comprehensive"
+
+task tests, "Run standard test suite":
+  echo "Running standard tests..."
+  exec "nim c -r --path:src tests/test_runner.nim"
+
+task allTests, "Run all available test suites":
+  echo "Running all test suites..."
+  exec "nimble test_comprehensive"
+  exec "nimble test"
 
 task testCore, "Run core tests only":
   echo "Running core tests..."

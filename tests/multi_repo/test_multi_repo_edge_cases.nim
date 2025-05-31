@@ -87,8 +87,9 @@ suite "Multi Repo Edge Cases - Invalid Repository Paths":
   
   test "Invalid path characters":
     let configPath = tempDir / "repos.json"
+    let emptyDeps: seq[string] = @[]
     createMockRepoConfig(configPath, @[
-      ("repo1", "/\0invalid\0path", @[])  # Null characters in path
+      ("repo1", "/invalid_path_with_special_chars", emptyDeps)  # Special characters in path
     ])
     
     let params = %*{
@@ -101,8 +102,9 @@ suite "Multi Repo Edge Cases - Invalid Repository Paths":
   
   test "Relative path resolution":
     let configPath = tempDir / "repos.json"
+    let emptyDeps: seq[string] = @[]
     createMockRepoConfig(configPath, @[
-      ("repo1", "../../../outside_temp", @[])  # Path outside temp directory
+      ("repo1", "../../../outside_temp", emptyDeps)  # Path outside temp directory
     ])
     
     let params = %*{

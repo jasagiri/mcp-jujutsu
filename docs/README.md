@@ -59,6 +59,8 @@ mcp-jujutsu/
 - **Confidence Scoring**: Each proposed division includes confidence scores for validation
 - **Performance Optimization**: Integrated with nim-testkit's performance framework for LRU caching and profiling
 - **Tool Integration**: Works seamlessly with niuv delegation system for enhanced development workflows
+- **Multiple Diff Formats**: Support for native, git, JSON, Markdown, HTML, and custom template-based diff outputs
+- **Customizable Templates**: Create your own diff format templates for specific workflows
 
 ## Installation
 

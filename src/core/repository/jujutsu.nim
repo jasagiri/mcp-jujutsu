@@ -2,10 +2,13 @@
 ##
 ## This module provides common functionality for interacting with Jujutsu repositories.
 
-import std/[asyncdispatch, json, options, os, osproc, strutils, times, sequtils]
+import std/[asyncdispatch, json, options, os, osproc, strutils, sequtils]
 import ../logging/logger
+import ../config/config
 import jujutsu_version
+import diff_formats
 export jujutsu_version.quoteShellArg
+export diff_formats.DiffFormat, diff_formats.DiffFormatConfig, diff_formats.loadTemplate
 
 type
   JujutsuRepo* = ref object
@@ -81,19 +84,53 @@ proc initJujutsuRepo*(path: string, initIfNotExists: bool = false): Future[Jujut
   
   result.isInitialized = true
 
-proc getDiffForCommitRange*(repo: JujutsuRepo, commitRange: string): Future[DiffResult] {.async, gcsafe.} =
-  ## Gets the diff for a commit range
+proc createDiffFormatConfig*(config: Config): DiffFormatConfig =
+  ## Create DiffFormatConfig from application Config
+  result = DiffFormatConfig(
+    format: case config.diffFormat.toLowerAscii()
+      of "native": Native
+      of "git": Git
+      of "json": Json
+      of "markdown": Markdown
+      of "html": Html
+      of "custom": Custom
+      else: Git
+    ,
+    colorize: config.diffColorize,
+    contextLines: config.diffContextLines,
+    showLineNumbers: config.diffShowLineNumbers
+  )
+  
+  # Load custom template if specified
+  if config.diffFormat.toLowerAscii() == "custom" and config.diffTemplatePath != "":
+    if fileExists(config.diffTemplatePath):
+      try:
+        result.diffTemplate = some(loadTemplate(config.diffTemplatePath))
+      except CatchableError as e:
+        let ctx = newLogContext("repository", "loadTemplate")
+          .withMetadata("path", config.diffTemplatePath)
+          .withMetadata("error", e.msg)
+        error("Failed to load custom diff template", ctx)
+
+proc getDiffForCommitRange*(repo: JujutsuRepo, commitRange: string, formatConfig: DiffFormatConfig = DiffFormatConfig()): Future[DiffResult] {.async, gcsafe.} =
+  ## Gets the diff for a commit range with configurable output format
   let commands = await getJujutsuCommands()
   
-  # Build version-appropriate diff command
+  # Determine which diff format to request from jj
+  let useNativeFormat = formatConfig.format == Native
+  let baseCmd = if useNativeFormat:
+    commands.diffCommand  # Native format
+  else:
+    commands.diffCommand & " --git"  # Git format for all other formats
+  
   let cmd = if ".." in commitRange:
     let parts = commitRange.split("..")
     if parts.len == 2:
-      commands.diffCommand & " --from " & quoteShellArg(parts[0]) & " --to " & quoteShellArg(parts[1])
+      baseCmd & " --from " & quoteShellArg(parts[0]) & " --to " & quoteShellArg(parts[1])
     else:
-      commands.diffCommand & " -r " & quoteShellArg(commitRange)
+      baseCmd & " -r " & quoteShellArg(commitRange)
   else:
-    commands.diffCommand & " -r " & quoteShellArg(commitRange)
+    baseCmd & " -r " & quoteShellArg(commitRange)
   
   let (output, exitCode) = await execCommand(cmd, repo.path)
   
@@ -107,66 +144,99 @@ proc getDiffForCommitRange*(repo: JujutsuRepo, commitRange: string): Future[Diff
     error(errMsg, ctx)
     raise newException(IOError, errMsg)
   
+  # Format the diff output according to the requested format
+  let formattedOutput = formatDiff(output, formatConfig, useNativeFormat)
+  
+  # Parse the diff to extract file information
   var files: seq[FileDiff] = @[]
-  var currentFile = ""
-  var currentDiff = ""
-  var currentType = ""
-  
-  # Parse the diff output
-  for line in output.splitLines():
-    if line.startsWith("diff "):
-      # Save previous file if any
-      if currentFile != "":
-        files.add(FileDiff(
-          path: currentFile,
-          changeType: currentType,
-          diff: currentDiff
-        ))
-      
-      # Start new file
-      let parts = line.split(' ')
-      if parts.len >= 4:
-        currentFile = parts[3].replace("b/", "")
-        currentDiff = line & "\n"
-        
-        # Determine change type
-        if "/dev/null" in parts[2]:
-          currentType = "add"
-        elif "/dev/null" in parts[3]:
-          currentType = "delete"
-        else:
-          currentType = "modify"
-    else:
-      # Continue current diff
-      currentDiff.add(line & "\n")
-  
-  # Add last file
-  if currentFile != "":
-    files.add(FileDiff(
-      path: currentFile,
-      changeType: currentType,
-      diff: currentDiff
-    ))
-  
-  # Calculate stats
   var stats = %*{
-    "files": files.len,
+    "files": 0,
     "additions": 0,
     "deletions": 0
   }
   
-  var additions = 0
-  var deletions = 0
-  
-  for file in files:
-    for line in file.diff.splitLines():
-      if line.startsWith("+") and not line.startsWith("+++"):
-        additions += 1
-      elif line.startsWith("-") and not line.startsWith("---"):
-        deletions += 1
-  
-  stats["additions"] = %additions
-  stats["deletions"] = %deletions
+  if formatConfig.format == Json:
+    # If JSON format, parse the JSON to extract file info
+    let jsonData = parseJson(formattedOutput)
+    stats = %*{
+      "files": jsonData["files"].len,
+      "additions": 0,
+      "deletions": 0
+    }
+    
+    for fileObj in jsonData["files"]:
+      files.add(FileDiff(
+        path: fileObj["path"].getStr(),
+        changeType: fileObj["changeType"].getStr(),
+        diff: ""  # Not needed for JSON format
+      ))
+      stats["additions"] = %(stats["additions"].getInt() + fileObj["additions"].getInt())
+      stats["deletions"] = %(stats["deletions"].getInt() + fileObj["deletions"].getInt())
+  else:
+    # Parse git-style diff for file information
+    var currentFile = ""
+    var currentDiff = ""
+    var currentType = ""
+    var additions = 0
+    var deletions = 0
+    
+    for line in output.splitLines():
+      if line.startsWith("diff ") or (useNativeFormat and (line.startsWith("Modified ") or line.startsWith("Added ") or line.startsWith("Deleted "))):
+        # Save previous file if any
+        if currentFile != "":
+          files.add(FileDiff(
+            path: currentFile,
+            changeType: currentType,
+            diff: if formatConfig.format in [Native, Git]: currentDiff else: formattedOutput
+          ))
+        
+        # Start new file
+        if useNativeFormat:
+          let parts = line.split(' ', 1)
+          if parts.len >= 2:
+            currentType = case parts[0].toLowerAscii()
+              of "modified": "modify"
+              of "added": "add"
+              of "deleted": "delete"
+              else: "modify"
+            currentFile = parts[1].strip()
+            currentDiff = line & "\n"
+        else:
+          let parts = line.split(' ')
+          if parts.len >= 4:
+            currentFile = parts[3].replace("b/", "")
+            currentDiff = line & "\n"
+            
+            # Determine change type
+            if "/dev/null" in parts[2]:
+              currentType = "add"
+            elif "/dev/null" in parts[3]:
+              currentType = "delete"
+            else:
+              currentType = "modify"
+      else:
+        # Continue current diff
+        currentDiff.add(line & "\n")
+        
+        # Count additions/deletions
+        if line.startsWith("+") and not line.startsWith("+++"):
+          additions += 1
+        elif line.startsWith("-") and not line.startsWith("---"):
+          deletions += 1
+    
+    # Add last file
+    if currentFile != "":
+      files.add(FileDiff(
+        path: currentFile,
+        changeType: currentType,
+        diff: if formatConfig.format in [Native, Git]: currentDiff else: formattedOutput
+      ))
+    
+    stats = %*{
+      "files": files.len,
+      "additions": additions,
+      "deletions": deletions
+    }
   
   return DiffResult(
     commitRange: commitRange,
@@ -342,9 +412,9 @@ proc getCommitHistory*(repo: JujutsuRepo, limit: int = 10, branch: string = "@")
   
   return commits
 
-proc compareCommits*(repo: JujutsuRepo, commit1: string, commit2: string): Future[DiffResult] {.async, gcsafe.} =
+proc compareCommits*(repo: JujutsuRepo, commit1: string, commit2: string, formatConfig: DiffFormatConfig = DiffFormatConfig()): Future[DiffResult] {.async, gcsafe.} =
   ## Compares two commits
-  return await getDiffForCommitRange(repo, commit1 & ".." & commit2)
+  return await getDiffForCommitRange(repo, commit1 & ".." & commit2, formatConfig)
 
 proc getCommitFiles*(repo: JujutsuRepo, commitId: string): Future[seq[string]] {.async, gcsafe.} =
   ## Gets the list of files modified in a commit

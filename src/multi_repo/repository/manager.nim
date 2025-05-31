@@ -232,7 +232,7 @@ proc loadRepositoryConfig*(path: string): Future[RepositoryManager] {.async.} =
         result = loadRepositoryConfigFromToml(path, rootDir)
       except CatchableError:
         result = loadRepositoryConfigFromJson(path, rootDir)
-  except Exception as e:
+  except CatchableError as e:
     echo "Error loading repository configuration: " & e.msg
     # Still return empty manager on error, but now with proper logging
 
@@ -258,7 +258,7 @@ proc saveConfigAsToml(manager: RepositoryManager, path: string): bool =
     
     writeFile(path, tomlStr)
     return true
-  except Exception as e:
+  except CatchableError as e:
     echo "Error saving TOML configuration: " & e.msg
     return false
 
@@ -289,7 +289,7 @@ proc saveConfigAsJson(manager: RepositoryManager, path: string): bool =
     # Write to file
     writeFile(path, pretty(configJson))
     return true
-  except Exception as e:
+  except CatchableError as e:
     echo "Error saving JSON configuration: " & e.msg
     return false
 
@@ -320,7 +320,7 @@ proc saveConfig*(manager: RepositoryManager, path: string = ""): Future[bool] {.
       # Default to TOML
       return saveConfigAsToml(manager, configPath)
       
-  except Exception as e:
+  except CatchableError as e:
     echo "Error saving repository configuration: " & e.msg
     return false
 
@@ -340,7 +340,7 @@ proc validateRepository*(manager: RepositoryManager, name: string): Future[bool]
   try:
     let jjRepo = await jujutsu.initJujutsuRepo(repo.path)
     return true
-  except:
+  except CatchableError:
     return false
 
 proc validateDependencies*(manager: RepositoryManager): Future[bool] {.async.} =

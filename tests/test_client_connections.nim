@@ -2,7 +2,7 @@
 ##
 ## Tests for client connections using different transport modes
 
-import unittest, asyncdispatch, json, os, strutils, strformat, osproc, net
+import unittest, asyncdispatch, json, os, strutils, strformat, osproc, net, sequtils
 import ../src/core/config/config as core_config
 
 suite "Client Connection Command Tests":
@@ -97,7 +97,7 @@ suite "Transport Connection Tests":
       check parsed["jsonrpc"].getStr() == "2.0"
       check parsed["method"].getStr() == "initialize"
     except JsonParsingError:
-      fail("Request should be valid JSON")
+      check false # Request should be valid JSON
 
   test "HTTP Transport Request Format":
     ## Test HTTP transport request format

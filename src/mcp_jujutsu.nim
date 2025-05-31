@@ -137,7 +137,7 @@ proc handleHttpRequest(transport: HttpTransport, req: Request): Future[void] {.a
     
   except JsonParsingError:
     await req.respond(Http400, "Invalid JSON", newHttpHeaders([("Content-Type", "text/plain")]))
-  except Exception as e:
+  except CatchableError as e:
     await req.respond(Http500, "Internal server error: " & e.msg, newHttpHeaders([("Content-Type", "text/plain")]))
 
 proc isPortInUse(port: int, host: string = "127.0.0.1"): bool =
@@ -252,7 +252,7 @@ proc readPidFile(port: int = 0): tuple[pid: int, port: int] =
       let parts = content.split(":")
       if parts.len == 2:
         return (parseInt(parts[0]), parseInt(parts[1]))
-  except:
+  except CatchableError:
     discard
   return (0, 0)
 
@@ -262,7 +262,7 @@ proc cleanupPidFile(port: int = 0) =
   try:
     if fileExists(pidFile):
       removeFile(pidFile)
-  except:
+  except CatchableError:
     discard
 
 proc isProcessRunning(pid: int): bool =
@@ -275,7 +275,7 @@ proc isProcessRunning(pid: int): bool =
       # Unix-like systems
       let result = kill(Pid(pid), cint(0))  # Signal 0 checks if process exists
       return result == 0
-  except:
+  except CatchableError:
     return false
 
 proc stopExistingServer(targetPort: int): bool =
@@ -342,8 +342,8 @@ proc stopExistingServer(targetPort: int): bool =
         
         echo "Successfully stopped server on port ", port, " and port is now available"
         return true
-    except:
-      echo "Warning: Could not stop existing server"
+    except CatchableError as e:
+      echo "Warning: Could not stop existing server: ", e.msg
       return false
   elif pid > 0 and port != targetPort:
     # PID file exists but for different port

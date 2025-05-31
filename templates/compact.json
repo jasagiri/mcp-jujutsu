@@ -1,0 +1,10 @@
+{
+  "name": "compact",
+  "description": "Compact diff format without context lines",
+  "fileHeader": "$path:",
+  "hunkHeader": "",
+  "addLine": "+$newLineNo: $content",
+  "deleteLine": "-$oldLineNo: $content",
+  "contextLine": "",
+  "footer": ""
+}

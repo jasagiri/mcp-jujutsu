@@ -123,7 +123,7 @@ proc handleJsonRpcOverSse(transport: SseTransport, req: Request) {.async.} =
   except JsonParsingError as e:
     echo "Failed to parse JSON request: ", e.msg
     await req.respond(Http400, "Invalid JSON: " & e.msg)
-  except Exception as e:
+  except CatchableError as e:
     echo "Error handling SSE request: ", e.msg
     await req.respond(Http500, "Internal server error: " & e.msg)
 
@@ -147,11 +147,11 @@ proc handleHttpRequest(transport: SseTransport, req: Request) {.async.} =
     else:
       await req.respond(Http405, "Method not allowed")
       
-  except Exception as e:
+  except CatchableError as e:
     echo "Error handling HTTP request: ", e.msg
     try:
       await req.respond(Http500, "Internal server error")
-    except:
+    except CatchableError:
       discard
 
 method start*(transport: SseTransport): Future[void] {.async.} =

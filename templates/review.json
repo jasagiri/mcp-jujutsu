@@ -1,0 +1,10 @@
+{
+  "name": "review",
+  "description": "Code review friendly format",
+  "fileHeader": "\n📁 $path ($changeType)\n" ,
+  "hunkHeader": "\n📍 Lines $oldStart-$oldCount → $newStart-$newCount",
+  "addLine": "  ✅ $content",
+  "deleteLine": "  ❌ $content",
+  "contextLine": "     $content",
+  "footer": "\n  📊 +$additions -$deletions\n"
+}

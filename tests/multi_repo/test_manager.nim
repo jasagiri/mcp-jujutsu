@@ -1,6 +1,6 @@
 ## Tests for repository manager (additional tests)
 
-import std/[unittest, asyncdispatch, os, json, tables, options]
+import std/[unittest, tables, options]
 import ../../src/multi_repo/repository/manager
 
 suite "Repository Manager Extended Tests":

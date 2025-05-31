@@ -40,6 +40,22 @@ repos_dir = "."
 # Path to repository configuration file (multi-repo mode)
 config_path = "./repos.toml"
 
+[diff]
+# Diff output format: "native", "git", "json", "markdown", "html", "custom"
+format = "git"
+
+# Enable colored diff output
+colorize = false
+
+# Number of context lines in diffs
+context_lines = 3
+
+# Show line numbers in diff output
+show_line_numbers = false
+
+# Path to custom diff template file (only used when format = "custom")
+template_path = ""
+
 [ai]
 # URL for AI model API endpoint
 endpoint = "https://api.openai.com/v1/chat/completions"

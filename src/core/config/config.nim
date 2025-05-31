@@ -33,6 +33,13 @@ type
     reposDir*: string           ## Directory containing repositories (multi-repo mode)
     repoConfigPath*: string     ## Path to repository configuration file (multi-repo mode)
     
+    # Diff format settings
+    diffFormat*: string         ## Default diff format: "native", "git", "json", "markdown", "html", "custom"
+    diffColorize*: bool         ## Enable colored diff output
+    diffContextLines*: int      ## Number of context lines in diffs
+    diffShowLineNumbers*: bool  ## Show line numbers in diff output
+    diffTemplatePath*: string   ## Path to custom diff template file
+    
     # AI Integration (reserved for future use)
     aiEndpoint*: string         ## URL for AI model API endpoint
     aiApiKey*: string           ## API key for AI service authentication
@@ -59,6 +66,13 @@ proc newDefaultConfig*(): Config =
     repoPath: getCurrentDir(),
     reposDir: getCurrentDir(),
     repoConfigPath: getCurrentDir() / "repos.toml",
+    
+    # Diff format settings
+    diffFormat: "git",
+    diffColorize: false,
+    diffContextLines: 3,
+    diffShowLineNumbers: false,
+    diffTemplatePath: "",
     
     # AI Integration
     aiEndpoint: "https://api.openai.com/v1/chat/completions",
@@ -112,6 +126,20 @@ proc loadConfigFromToml(path: string): Config =
     if repo.hasKey("config_path"):
       result.repoConfigPath = repo["config_path"].getStr()
   
+  # Diff format settings
+  if tomlData.hasKey("diff"):
+    let diff = tomlData["diff"]
+    if diff.hasKey("format"):
+      result.diffFormat = diff["format"].getStr()
+    if diff.hasKey("colorize"):
+      result.diffColorize = diff["colorize"].getBool()
+    if diff.hasKey("context_lines"):
+      result.diffContextLines = diff["context_lines"].getInt()
+    if diff.hasKey("show_line_numbers"):
+      result.diffShowLineNumbers = diff["show_line_numbers"].getBool()
+    if diff.hasKey("template_path"):
+      result.diffTemplatePath = diff["template_path"].getStr()
+  
   # AI settings
   if tomlData.hasKey("ai"):
     let ai = tomlData["ai"]
@@ -161,6 +189,18 @@ proc loadConfigFromJson(path: string): Config =
     result.reposDir = jsonData["reposDir"].getStr()
   if jsonData.hasKey("repoConfigPath"):
     result.repoConfigPath = jsonData["repoConfigPath"].getStr()
+  
+  # Diff format settings
+  if jsonData.hasKey("diffFormat"):
+    result.diffFormat = jsonData["diffFormat"].getStr()
+  if jsonData.hasKey("diffColorize"):
+    result.diffColorize = jsonData["diffColorize"].getBool()
+  if jsonData.hasKey("diffContextLines"):
+    result.diffContextLines = jsonData["diffContextLines"].getInt()
+  if jsonData.hasKey("diffShowLineNumbers"):
+    result.diffShowLineNumbers = jsonData["diffShowLineNumbers"].getBool()
+  if jsonData.hasKey("diffTemplatePath"):
+    result.diffTemplatePath = jsonData["diffTemplatePath"].getStr()
   
   # AI settings
   if jsonData.hasKey("aiEndpoint"):
@@ -243,6 +283,11 @@ proc parseCommandLine*(): Config =
         echo "  --ai-endpoint=URL           AI endpoint URL"
         echo "  --ai-key=KEY                AI API key"
         echo "  --ai-model=MODEL            AI model to use (default: gpt-4)"
+        echo "  --diff-format=FORMAT        Diff output format: native, git, json, markdown, html, custom"
+        echo "  --diff-colorize             Enable colored diff output"
+        echo "  --diff-context=NUM          Number of context lines in diffs (default: 3)"
+        echo "  --diff-line-numbers         Show line numbers in diff output"
+        echo "  --diff-template=PATH        Path to custom diff template file"
         echo "  --log-level=LEVEL           Log level (default: info)"
         echo "  --verbose                   Enable verbose output"
         quit(0)
@@ -274,6 +319,16 @@ proc parseCommandLine*(): Config =
         result.aiApiKey = p.val
       of "ai-model":
         result.aiModel = p.val
+      of "diff-format":
+        result.diffFormat = p.val
+      of "diff-colorize":
+        result.diffColorize = if p.val == "": true else: parseBool(p.val)
+      of "diff-context":
+        result.diffContextLines = parseInt(p.val)
+      of "diff-line-numbers":
+        result.diffShowLineNumbers = if p.val == "": true else: parseBool(p.val)
+      of "diff-template":
+        result.diffTemplatePath = p.val
       of "log-level":
         result.logLevel = p.val
       of "verbose":

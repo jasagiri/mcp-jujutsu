@@ -12,7 +12,7 @@ suite "Command Line Parsing":
     
     # Simulate command line parsing
     var p = initOptParser(args)
-    var config = single_config.newConfig()
+    var config = core_config.newDefaultConfig()
     
     for kind, key, val in p.getopt():
       case kind
@@ -168,7 +168,7 @@ suite "Command Line Parsing":
     
   test "Default Values":
     # Test that default values are used when options not specified
-    let config = single_config.newConfig()
+    let config = core_config.newDefaultConfig()
     
     check config.httpPort == 8080  # Default port
     check config.httpHost == "127.0.0.1"  # Default host
